@@ -1,4 +1,4 @@
-﻿/************************************************************************
+/************************************************************************
    AvalonDock
 
    Copyright (C) 2007-2013 Xceed Software Inc.
@@ -7,19 +7,13 @@
    License (Ms-PL) as published at https://opensource.org/licenses/MS-PL
  ************************************************************************/
 
-using System;
-
 namespace AvalonDock.Themes
 {
 	/// <inheritdoc/>
-	public class Vs2013BlueTheme : Theme
+	public class Vs2013BlueTheme : DictionaryTheme
 	{
 		/// <inheritdoc/>
-		public override Uri GetResourceUri()
-		{
-			return new Uri(
-				"/AvalonDock.Themes.VS2013;component/BlueTheme.xaml",
-				UriKind.Relative);
-		}
+		public Vs2013BlueTheme()
+			: base(VsThemePaletteFactory.BuildDictionary(VsThemeResources.Blue)) { }
 	}
 }

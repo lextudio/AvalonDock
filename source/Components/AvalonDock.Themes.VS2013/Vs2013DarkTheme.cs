@@ -7,19 +7,13 @@
    License (Ms-PL) as published at https://opensource.org/licenses/MS-PL
  ************************************************************************/
 
-using System;
-
 namespace AvalonDock.Themes
 {
 	/// <inheritdoc/>
-	public class Vs2013DarkTheme : Theme
+	public class Vs2013DarkTheme : DictionaryTheme
 	{
 		/// <inheritdoc/>
-		public override Uri GetResourceUri()
-		{
-			return new Uri(
-				"/AvalonDock.Themes.VS2013;component/DarkTheme.xaml",
-				UriKind.Relative);
-		}
+		public Vs2013DarkTheme()
+			: base(VsThemePaletteFactory.BuildDictionary(VsThemeResources.Dark)) { }
 	}
 }

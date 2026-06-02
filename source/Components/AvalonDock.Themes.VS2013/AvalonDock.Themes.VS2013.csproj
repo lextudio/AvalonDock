@@ -12,6 +12,12 @@
 		<Resource Include="**\*.png"/>
 	</ItemGroup>
 
+	<ItemGroup>
+		<EmbeddedResource Include="Resources\vs2013blue.vstheme.gz" />
+		<EmbeddedResource Include="Resources\vs2013dark.vstheme.gz" />
+		<EmbeddedResource Include="Resources\vs2013light.vstheme.gz" />
+	</ItemGroup>
+
 	<!-- NuGet Packaging -->
 	<ItemGroup>
 		<None Include="LICENSE" Pack="true" PackagePath=""/>
