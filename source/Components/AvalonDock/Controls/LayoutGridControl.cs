@@ -55,6 +55,14 @@ namespace AvalonDock.Controls
 #if HAS_UNO
 		// Uno live-resize state (no ghost overlay).
 		private LayoutGridResizerControl _activeSplitter;
+		// Sizes captured at drag start plus the running cumulative delta. Pointer-move
+		// events can arrive faster than layout passes, so ActualWidth/ActualHeight are
+		// stale mid-drag; resizing against them discards earlier deltas. Always resize
+		// against the captured base + accumulated delta instead.
+		private double _dragBasePrev;
+		private double _dragBaseNext;
+		private double _dragAccum;
+		private bool _dragBaseCaptured;
 #endif
 
 		internal LayoutGridControl(LayoutPositionableGroup<T> model, Orientation orientation)
@@ -361,7 +369,11 @@ namespace AvalonDock.Controls
 		// ── Uno drag handlers: live resize, no ghost overlay ──────────────────────
 
 		private void OnSplitterDragStarted(object sender, DragStartedEventArgs e)
-			=> _activeSplitter = sender as LayoutGridResizerControl;
+		{
+			_activeSplitter = sender as LayoutGridResizerControl;
+			_dragBaseCaptured = false;
+			_dragAccum = 0;
+		}
 
 		private void OnSplitterDragDelta(object sender, DragDeltaEventArgs e)
 		{
@@ -374,28 +386,39 @@ namespace AvalonDock.Controls
 			var prevModel = (prev as ILayoutControl)?.Model as ILayoutPositionableElement;
 			var nextModel = (next as ILayoutControl)?.Model as ILayoutPositionableElement;
 			if (prevModel == null || nextModel == null) return;
-			if (Orientation == System.Windows.Controls.Orientation.Horizontal)
+			var horizontal = Orientation == System.Windows.Controls.Orientation.Horizontal;
+			if (!_dragBaseCaptured)
 			{
-				var pW = prev.ActualWidth; var nW = next.ActualWidth;
-				var np = Math.Max(prevModel.CalculatedDockMinWidth(), pW + delta);
-				var nn = Math.Max(nextModel.CalculatedDockMinWidth(), nW - delta);
-				var t = pW + nW; if (np + nn > t) nn = t - np;
+				_dragBasePrev = horizontal ? prev.ActualWidth : prev.ActualHeight;
+				_dragBaseNext = horizontal ? next.ActualWidth : next.ActualHeight;
+				_dragBaseCaptured = true;
+			}
+			_dragAccum += delta;
+			var total = _dragBasePrev + _dragBaseNext;
+			if (horizontal)
+			{
+				var np = Math.Max(prevModel.CalculatedDockMinWidth(), _dragBasePrev + _dragAccum);
+				var nn = Math.Max(nextModel.CalculatedDockMinWidth(), total - np);
+				if (np + nn > total) np = total - nn;
 				prevModel.DockWidth = new GridLength(np, GridUnitType.Pixel);
 				nextModel.DockWidth = new GridLength(nn, GridUnitType.Pixel);
 			}
 			else
 			{
-				var pH = prev.ActualHeight; var nH = next.ActualHeight;
-				var np = Math.Max(prevModel.CalculatedDockMinHeight(), pH + delta);
-				var nn = Math.Max(nextModel.CalculatedDockMinHeight(), nH - delta);
-				var t = pH + nH; if (np + nn > t) nn = t - np;
+				var np = Math.Max(prevModel.CalculatedDockMinHeight(), _dragBasePrev + _dragAccum);
+				var nn = Math.Max(nextModel.CalculatedDockMinHeight(), total - np);
+				if (np + nn > total) np = total - nn;
 				prevModel.DockHeight = new GridLength(np, GridUnitType.Pixel);
 				nextModel.DockHeight = new GridLength(nn, GridUnitType.Pixel);
 			}
 		}
 
 		private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e)
-			=> _activeSplitter = null;
+		{
+			_activeSplitter = null;
+			_dragBaseCaptured = false;
+			_dragAccum = 0;
+		}
 
 #else
 		// ── WPF drag handlers delegated to LayoutGridControl.wpf.cs ─────────────
