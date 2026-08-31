@@ -209,12 +209,7 @@ namespace AvalonDock.Controls
 			// Add vertical buffer to prevent accidental floating when reordering tabs
 			_parentDocumentTabPanelScreenArea.Inflate(0, _parentDocumentTabPanelScreenArea.Height / 2);
 			_otherTabs = _parentDocumentTabPanel.Children.Cast<TabItem>().Where(ch => ch.Visibility != Visibility.Collapsed).ToList();
-			var currentTabScreenArea = this.FindLogicalAncestor<TabItem>().GetScreenArea();
-			_otherTabsScreenArea = _otherTabs.Select(ti =>
-			{
-				var screenArea = ti.GetScreenArea();
-				return new Rect(screenArea.Left, screenArea.Top, currentTabScreenArea.Width, screenArea.Height);
-			}).ToList();
+			_otherTabsScreenArea = _otherTabs.Select(ti => ti.GetScreenArea()).ToList();
 		}
 
 		/// <summary>

@@ -561,6 +561,25 @@ namespace AvalonDock
 		{
 		}
 
+		/// <summary><see cref="DocumentTabsWrap"/> dependency property.</summary>
+		public static readonly DependencyProperty DocumentTabsWrapProperty = DependencyProperty.Register(nameof(DocumentTabsWrap), typeof(bool), typeof(DockingManager),
+			new FrameworkPropertyMetadata(false));
+
+		/// <summary>
+		/// Gets or sets whether document tabs wrap onto additional rows when they do not fit in a document pane.
+		/// </summary>
+		/// <remarks>
+		/// The default is <see langword="false"/>, which preserves the traditional single-row tab strip and overflow menu behavior.
+		/// </remarks>
+		[Bindable(true)]
+		[Description("Gets or sets whether document tabs wrap onto additional rows when they do not fit in a document pane.")]
+		[Category("Document")]
+		public bool DocumentTabsWrap
+		{
+			get => (bool)GetValue(DocumentTabsWrapProperty);
+			set => SetValue(DocumentTabsWrapProperty, value);
+		}
+
 		/// <summary>
 		/// <see cref="AnchorablePaneTemplate"/> dependency property
 		/// </summary>
