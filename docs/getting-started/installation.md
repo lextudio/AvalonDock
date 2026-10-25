@@ -30,6 +30,10 @@ gh auth login
 
 ## Install via NuGet
 
+Also add `<package pattern="ProGPU.Scene.Native" />` to your
+`nuget.org` source mapping. This exact rule overrides `ProGPU.*` above:
+the package is published on NuGet.org outside OpenAvalon's GitHub closure.
+
 ### .NET CLI
 
 ```bash

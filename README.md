@@ -14,8 +14,10 @@ the five AvalonDock fork IDs (`Dirkster.AvalonDock.Core`,
 `https://nuget.pkg.github.com/lextudio/index.json` (GitHub Packages feeds are
 owner-scoped; OpenAvalon publishes under lextudio) in `NuGet.config`;
 otherwise NuGet can mix those fork packages with same-version upstream packages
-from nuget.org. The LibreWPF UI packages use distinct
-`.LibreWPF` IDs. GitHub Packages' NuGet endpoint requires an authenticated client;
+from nuget.org. `ProGPU.Scene.Native` is outside OpenAvalon's published closure
+and needs an exact mapping to nuget.org, which takes precedence over `ProGPU.*`.
+The LibreWPF UI packages use distinct `.LibreWPF` IDs.
+GitHub Packages' NuGet endpoint requires an authenticated client;
 CI uses its built-in `GITHUB_TOKEN`, while OpenDevelop's local-feed synchronizer uses
 the logged-in `gh` CLI without storing a token in this repository.
 
