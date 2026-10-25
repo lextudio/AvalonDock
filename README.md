@@ -10,8 +10,9 @@ the five AvalonDock fork IDs (`Dirkster.AvalonDock.Core`,
 `Dirkster.AvalonDock.Themes.VS.LibreWPF`, and
 `Dirkster.AvalonDock.Themes.VS2013.LibreWPF`) to
 `https://nuget.pkg.github.com/lextudio/index.json`, and map `LibreWPF.*`,
-`LibreWinForms.*`, and `ProGPU.*` to
-`https://nuget.pkg.github.com/OpenAvalon/index.json` in `NuGet.config`;
+`LibreWinForms.*`, and `ProGPU.*` to the `openavalon-github` source at
+`https://nuget.pkg.github.com/lextudio/index.json` (GitHub Packages feeds are
+owner-scoped; OpenAvalon publishes under lextudio) in `NuGet.config`;
 otherwise NuGet can mix those fork packages with same-version upstream packages
 from nuget.org. The LibreWPF UI packages use distinct
 `.LibreWPF` IDs. GitHub Packages' NuGet endpoint requires an authenticated client;
