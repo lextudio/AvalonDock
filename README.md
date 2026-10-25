@@ -8,11 +8,12 @@ assembly identities stay compatible. Consumers of the fork must therefore map
 the five AvalonDock fork IDs (`Dirkster.AvalonDock.Core`,
 `Dirkster.AvalonDock.LibreWPF`, `Dirkster.AvalonDock.Serializer.Xml`,
 `Dirkster.AvalonDock.Themes.VS.LibreWPF`, and
-`Dirkster.AvalonDock.Themes.VS2013.LibreWPF`), plus `LibreWPF.*`,
-`LibreWinForms.*`, and `ProGPU.*`, to
-`https://nuget.pkg.github.com/lextudio/index.json`
-in `NuGet.config`; otherwise NuGet can mix those fork packages with same-version
-upstream packages from nuget.org. The LibreWPF UI packages use distinct
+`Dirkster.AvalonDock.Themes.VS2013.LibreWPF`) to
+`https://nuget.pkg.github.com/lextudio/index.json`, and map `LibreWPF.*`,
+`LibreWinForms.*`, and `ProGPU.*` to
+`https://nuget.pkg.github.com/OpenAvalon/index.json` in `NuGet.config`;
+otherwise NuGet can mix those fork packages with same-version upstream packages
+from nuget.org. The LibreWPF UI packages use distinct
 `.LibreWPF` IDs. GitHub Packages' NuGet endpoint requires an authenticated client;
 CI uses its built-in `GITHUB_TOKEN`, while OpenDevelop's local-feed synchronizer uses
 the logged-in `gh` CLI without storing a token in this repository.
@@ -409,7 +410,9 @@ Version 5.0.0 includes several breaking changes. See the full [Breaking Changes]
 
 ## Building from Source
 
-This project requires **Windows** (WPF is Windows-only) and **.NET SDK 9.0.x / 10.0.x**.
+This project requires **.NET SDK 11 preview** (it builds the net10.0-windows
+payload) and authenticated access to the lextudio and OpenAvalon GitHub Packages
+feeds described above. The LibreWPF fork is validated on Windows and macOS ARM64.
 
 ```bash
 dotnet restore source/AvalonDock.sln

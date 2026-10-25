@@ -8,6 +8,12 @@ permissions:
   contents: read
   packages: read
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # OpenAvalon grants this repository's Actions GITHUB_TOKEN read access to its packages.
+  NuGetPackageSourceCredentials_lextudio-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+  NuGetPackageSourceCredentials_openavalon-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+
 jobs:
   build:
     name: Build & Test
@@ -27,11 +33,18 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'NuGet.config', 'source/**/*.csproj', 'source/**/*.props') }}
+
       - name: Prepare GitHub Packages restore access
         shell: pwsh
         run: |
           Copy-Item NuGet.config "$env:RUNNER_TEMP/NuGet.config"
           dotnet nuget update source lextudio-github --username $env:GITHUB_ACTOR --password $env:GITHUB_TOKEN --store-password-in-clear-text --configfile "$env:RUNNER_TEMP/NuGet.config"
+          dotnet nuget update source openavalon-github --username $env:GITHUB_ACTOR --password $env:GITHUB_TOKEN --store-password-in-clear-text --configfile "$env:RUNNER_TEMP/NuGet.config"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

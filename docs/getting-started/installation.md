@@ -10,18 +10,19 @@ description: "Install AvalonDock via NuGet and add it to your WPF project."
 
 AvalonDock is distributed as a set of NuGet packages. The core package contains the docking framework, and theme packages are installed separately.
 
-For the LibreWPF fork, authenticate the NuGet client to lextudio GitHub Packages,
-then map only the five fork package IDs to it before restoring. CI can use its
-built-in `GITHUB_TOKEN`; local OpenDevelop builds use the logged-in `gh` CLI to
-synchronize a local feed without writing a token into the repository:
+For the LibreWPF fork, authenticate the NuGet client to GitHub Packages. Map the
+five fork package IDs to lextudio GitHub Packages and the LibreWPF runtime closure
+to OpenAvalon GitHub Packages before restoring. CI can use its built-in
+`GITHUB_TOKEN`; local OpenDevelop builds use the logged-in `gh` CLI to synchronize
+a local feed without writing a token into the repository:
 
 ```bash
 gh auth login
 ```
 
 ```xml
-<packageSources><add key="lextudio-github" value="https://nuget.pkg.github.com/lextudio/index.json" /></packageSources>
-<packageSourceMapping><packageSource key="lextudio-github"><package pattern="Dirkster.AvalonDock.Core" /><package pattern="Dirkster.AvalonDock.LibreWPF" /><package pattern="Dirkster.AvalonDock.Serializer.Xml" /><package pattern="Dirkster.AvalonDock.Themes.VS.LibreWPF" /><package pattern="Dirkster.AvalonDock.Themes.VS2013.LibreWPF" /><package pattern="LibreWPF.*" /><package pattern="LibreWinForms.*" /><package pattern="ProGPU.*" /></packageSource></packageSourceMapping>
+<packageSources><add key="lextudio-github" value="https://nuget.pkg.github.com/lextudio/index.json" /><add key="openavalon-github" value="https://nuget.pkg.github.com/OpenAvalon/index.json" /></packageSources>
+<packageSourceMapping><packageSource key="lextudio-github"><package pattern="Dirkster.AvalonDock.Core" /><package pattern="Dirkster.AvalonDock.LibreWPF" /><package pattern="Dirkster.AvalonDock.Serializer.Xml" /><package pattern="Dirkster.AvalonDock.Themes.VS.LibreWPF" /><package pattern="Dirkster.AvalonDock.Themes.VS2013.LibreWPF" /></packageSource><packageSource key="openavalon-github"><package pattern="LibreWPF.*" /><package pattern="LibreWinForms.*" /><package pattern="ProGPU.*" /></packageSource></packageSourceMapping>
 ```
 
 ---

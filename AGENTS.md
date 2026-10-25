@@ -5,7 +5,7 @@ Instructions for AI coding agents working on this repository.
 ## Prerequisites
 
 - **OS:** Windows (required — WPF projects only build on Windows)
-- **.NET SDK:** 9.0.x and 10.0.x
+- **.NET SDK:** 11 preview (the fork builds net10.0-windows payloads through LibreWPF)
 - **Solution file:** `source/AvalonDock.sln`
 
 ## Build
