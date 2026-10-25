@@ -13,6 +13,8 @@ the five AvalonDock fork IDs (`Dirkster.AvalonDock.Core`,
 `LibreWinForms.*`, and `ProGPU.*` to the `openavalon-github` source at
 `https://nuget.pkg.github.com/lextudio/index.json` (GitHub Packages feeds are
 owner-scoped; OpenAvalon publishes under lextudio) in `NuGet.config`;
+Use this single source key for both sets of packages because the endpoint is
+the same; declaring it twice can conflict with NuGet source mapping.
 otherwise NuGet can mix those fork packages with same-version upstream packages
 from nuget.org. `ProGPU.Scene.Native` is outside OpenAvalon's published closure
 and needs an exact mapping to nuget.org, which takes precedence over `ProGPU.*`.
