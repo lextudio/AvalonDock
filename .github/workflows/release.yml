@@ -38,11 +38,6 @@ jobs:
         with:
           dotnet-version: 11.0.x
           dotnet-quality: preview
-      - name: Setup .NET 10 runtime
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
-
       - name: Prepare GitHub Packages restore access
         shell: pwsh
         run: |
@@ -53,14 +48,42 @@ jobs:
 
       - name: Restore dependencies
         shell: pwsh
-        run: dotnet restore source/AvalonDock.sln --configfile "$env:RUNNER_TEMP/NuGet.config"
+        run: |
+          $projects = @(
+            'source/Components/AvalonDock/AvalonDock.csproj',
+            'source/Components/AvalonDock.Core/AvalonDock.Core.csproj',
+            'source/Components/AvalonDock.Serializer.Xml/AvalonDock.Serializer.Xml.csproj',
+            'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.csproj',
+            'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.csproj',
+            'source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet restore $project --configfile "$env:RUNNER_TEMP/NuGet.config"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Build
-        run: dotnet build source/AvalonDock.sln --configuration Release --no-restore --warnaserror
+        shell: pwsh
+        run: |
+          $projects = @(
+            'source/Components/AvalonDock/AvalonDock.csproj',
+            'source/Components/AvalonDock.Core/AvalonDock.Core.csproj',
+            'source/Components/AvalonDock.Serializer.Xml/AvalonDock.Serializer.Xml.csproj',
+            'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.csproj',
+            'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.csproj',
+            'source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet build $project --configuration Release --no-restore --warnaserror
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
-      - name: Test (Unit Tests)
+      - name: Test (Unit Tests, Windows)
+        if: matrix.flaui
+        env:
+          DOTNET_ROLL_FORWARD: Major
         run: >
-          dotnet test source/AvalonDock.sln
+          dotnet test source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj
           --configuration Release
           --no-restore
           --filter "Category!=FlaUI"
@@ -70,8 +93,10 @@ jobs:
 
       - name: Test (FlaUI UI Tests)
         if: matrix.flaui
+        env:
+          DOTNET_ROLL_FORWARD: Major
         run: >
-          dotnet test source/AvalonDock.sln
+          dotnet test source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj
           --configuration Release
           --no-restore
           --filter "Category=FlaUI"
@@ -98,7 +123,10 @@ jobs:
             'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.csproj',
             'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.csproj'
           )
-          foreach ($project in $projects) { dotnet pack $project --configuration Release --no-build --no-restore -o nupkg }
+          foreach ($project in $projects) {
+            dotnet pack $project --configuration Release --no-build --no-restore -o nupkg
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           [xml]$props = Get-Content source/Directory.Build.props
           $version = $props.Project.PropertyGroup.VersionPrefix
           $expected = @(
