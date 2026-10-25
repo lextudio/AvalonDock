@@ -67,6 +67,9 @@ jobs:
             'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.csproj',
             'source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj'
           )
+          if ('${{ matrix.flaui }}' -eq 'true') {
+            $projects += 'source/TestApp/TestApp.csproj', 'source/AvalonDockCodeApp/AvalonDockCodeApp.csproj'
+          }
           foreach ($project in $projects) {
             dotnet restore $project --configfile "$env:RUNNER_TEMP/NuGet.config"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -83,6 +86,9 @@ jobs:
             'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.csproj',
             'source/AutomationTest/AvalonDockTest/AvalonDockTest.csproj'
           )
+          if ('${{ matrix.flaui }}' -eq 'true') {
+            $projects += 'source/TestApp/TestApp.csproj', 'source/AvalonDockCodeApp/AvalonDockCodeApp.csproj'
+          }
           foreach ($project in $projects) {
             dotnet build $project --configuration Release --no-restore --warnaserror
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -196,7 +202,13 @@ jobs:
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget push nupkg/*.nupkg --api-key $env:GITHUB_TOKEN --source https://nuget.pkg.github.com/lextudio/index.json
+        run: |
+          $packages = @(Get-ChildItem nupkg -Filter '*.nupkg' -File -ErrorAction Stop)
+          if ($packages.Count -ne 5) { throw "Expected five validated AvalonDock packages, found $($packages.Count)." }
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName --api-key $env:GITHUB_TOKEN --source https://nuget.pkg.github.com/lextudio/index.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
