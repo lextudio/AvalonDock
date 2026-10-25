@@ -1,5 +1,22 @@
 # AvalonDock
 
+## LibreWPF package feed
+
+The OpenDevelop fork publishes `Dirkster.AvalonDock.Core` and
+`Dirkster.AvalonDock.Serializer.Xml` with their upstream IDs and version so their
+assembly identities stay compatible. Consumers of the fork must therefore map
+the five AvalonDock fork IDs (`Dirkster.AvalonDock.Core`,
+`Dirkster.AvalonDock.LibreWPF`, `Dirkster.AvalonDock.Serializer.Xml`,
+`Dirkster.AvalonDock.Themes.VS.LibreWPF`, and
+`Dirkster.AvalonDock.Themes.VS2013.LibreWPF`), plus `LibreWPF.*`,
+`LibreWinForms.*`, and `ProGPU.*`, to
+`https://nuget.pkg.github.com/lextudio/index.json`
+in `NuGet.config`; otherwise NuGet can mix those fork packages with same-version
+upstream packages from nuget.org. The LibreWPF UI packages use distinct
+`.LibreWPF` IDs. GitHub Packages' NuGet endpoint requires an authenticated client;
+CI uses its built-in `GITHUB_TOKEN`, while OpenDevelop's local-feed synchronizer uses
+the logged-in `gh` CLI without storing a token in this repository.
+
 [![CI](https://github.com/Dirkster99/AvalonDock/actions/workflows/release.yml/badge.svg)](https://github.com/Dirkster99/AvalonDock/actions/workflows/release.yml)
 [![Release](https://img.shields.io/github/release/Dirkster99/avalondock.svg)](https://github.com/Dirkster99/avalondock/releases/latest)
 [![NuGet](https://img.shields.io/nuget/dt/Dirkster.AvalonDock.svg)](http://nuget.org/packages/Dirkster.AvalonDock)

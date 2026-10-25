@@ -10,6 +10,20 @@ description: "Install AvalonDock via NuGet and add it to your WPF project."
 
 AvalonDock is distributed as a set of NuGet packages. The core package contains the docking framework, and theme packages are installed separately.
 
+For the LibreWPF fork, authenticate the NuGet client to lextudio GitHub Packages,
+then map only the five fork package IDs to it before restoring. CI can use its
+built-in `GITHUB_TOKEN`; local OpenDevelop builds use the logged-in `gh` CLI to
+synchronize a local feed without writing a token into the repository:
+
+```bash
+gh auth login
+```
+
+```xml
+<packageSources><add key="lextudio-github" value="https://nuget.pkg.github.com/lextudio/index.json" /></packageSources>
+<packageSourceMapping><packageSource key="lextudio-github"><package pattern="Dirkster.AvalonDock.Core" /><package pattern="Dirkster.AvalonDock.LibreWPF" /><package pattern="Dirkster.AvalonDock.Serializer.Xml" /><package pattern="Dirkster.AvalonDock.Themes.VS.LibreWPF" /><package pattern="Dirkster.AvalonDock.Themes.VS2013.LibreWPF" /><package pattern="LibreWPF.*" /><package pattern="LibreWinForms.*" /><package pattern="ProGPU.*" /></packageSource></packageSourceMapping>
+```
+
 ---
 
 ## Install via NuGet
@@ -17,19 +31,19 @@ AvalonDock is distributed as a set of NuGet packages. The core package contains 
 ### .NET CLI
 
 ```bash
-dotnet add package Dirkster.AvalonDock
+dotnet add package Dirkster.AvalonDock.LibreWPF
 ```
 
 ### Package Manager Console
 
 ```powershell
-Install-Package Dirkster.AvalonDock
+Install-Package Dirkster.AvalonDock.LibreWPF
 ```
 
 ### PackageReference (csproj)
 
 ```xml
-<PackageReference Include="Dirkster.AvalonDock" Version="5.0.0" />
+<PackageReference Include="Dirkster.AvalonDock.LibreWPF" Version="5.0.0" />
 ```
 
 ---
@@ -39,17 +53,11 @@ Install-Package Dirkster.AvalonDock
 AvalonDock ships with a default generic theme, but you'll likely want one of the polished built-in themes. Install the theme package for your preferred look:
 
 ```bash
-# Modern Arc theme (recommended)
-dotnet add package Dirkster.AvalonDock.Themes.Arc
-
 # Visual Studio 2013 theme
-dotnet add package Dirkster.AvalonDock.Themes.VS2013
+dotnet add package Dirkster.AvalonDock.Themes.VS2013.LibreWPF
 
-# Other themes
-dotnet add package Dirkster.AvalonDock.Themes.VS2010
-dotnet add package Dirkster.AvalonDock.Themes.Expression
-dotnet add package Dirkster.AvalonDock.Themes.Metro
-dotnet add package Dirkster.AvalonDock.Themes.Aero
+# Visual Studio theme
+dotnet add package Dirkster.AvalonDock.Themes.VS.LibreWPF
 ```
 
 ---

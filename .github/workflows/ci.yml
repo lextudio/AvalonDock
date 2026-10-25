@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build:
@@ -16,15 +17,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup .NET
+      - name: Setup .NET 11 preview SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+      - name: Setup .NET 10 runtime
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Prepare GitHub Packages restore access
+        shell: pwsh
+        run: |
+          Copy-Item NuGet.config "$env:RUNNER_TEMP/NuGet.config"
+          dotnet nuget update source lextudio-github --username $env:GITHUB_ACTOR --password $env:GITHUB_TOKEN --store-password-in-clear-text --configfile "$env:RUNNER_TEMP/NuGet.config"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore dependencies
-        run: dotnet restore source/AvalonDock.sln
+        shell: pwsh
+        run: dotnet restore source/AvalonDock.sln --configfile "$env:RUNNER_TEMP/NuGet.config"
 
       - name: Build
         run: dotnet build source/AvalonDock.sln --configuration Release --no-restore --warnaserror
