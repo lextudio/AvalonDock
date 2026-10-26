@@ -147,7 +147,9 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           [xml]$props = Get-Content source/Directory.Build.props
-          $version = $props.Project.PropertyGroup.VersionPrefix
+          # Directory.Build.props has several PropertyGroup elements; member enumeration over all of them
+          # would also return an empty entry for the groups without VersionPrefix.
+          $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
           $expected = @(
             "Dirkster.AvalonDock.Core.$version.nupkg",
             "Dirkster.AvalonDock.LibreWPF.$version.nupkg",

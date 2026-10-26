@@ -147,11 +147,17 @@ namespace AvalonDock.Controls
 
 		private bool _presenterIsVisualChild;
 
+#if LIBREWPF
 		/// <summary>
 		/// Uses the derived control's ordinary visual tree for a portable presentation source.
 		/// Native Windows presentation sources continue to use the child HWND path below.
 		/// </summary>
+		/// <remarks>
+		/// <c>HwndHost.UsesPortableVisualHosting</c> exists only in LibreWPF. A Windows host compiles
+		/// against real WPF, where there is nothing to override (CS0115), and defines no LIBREWPF.
+		/// </remarks>
 		protected override bool UsesPortableVisualHosting => HostsContentAsVisualChild;
+#endif
 
 		/// <summary>
 		/// Shows the control.
