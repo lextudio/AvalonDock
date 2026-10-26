@@ -1,5 +1,10 @@
 {
-    "msbuild-sdks": {
-        "LibreWPF.Sdk": "0.1.0-preview.65"
-    }
+  "sdk": {
+    "version": "11.0.100-rc.3.26522.148",
+    "rollForward": "latestFeature",
+    "allowPrerelease": true
+  },
+  "msbuild-sdks": {
+    "LibreWPF.Sdk": "0.1.0-preview.69"
+  }
 }

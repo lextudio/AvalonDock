@@ -8,50 +8,51 @@ on:
 
 permissions:
   contents: read
+  packages: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # OpenAvalon grants this repository's Actions GITHUB_TOKEN read access to its packages.
+  NuGetPackageSourceCredentials_openavalon-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
 
 jobs:
   build:
     name: Build & Test
     runs-on: windows-latest
 
-    env:
-      DevFlowAgentPath: ${{ github.workspace }}/ui-labs/src/DevFlow
-
     steps:
-      # The maui-labs submodule contains generator snapshot files whose paths exceed MAX_PATH, so
-      # checking it out on Windows fails with "Filename too long" without this.
-      - name: Enable long paths
-        run: git config --global core.longpaths true
-
       - name: Checkout
         uses: actions/checkout@v7
 
-      # TestApp and MVVMTestApp reference the DevFlow agent from source on this branch, so the
-      # solution does not build anywhere without it. See the Linux job for why it is a source
-      # reference rather than a package.
-      - name: Checkout DevFlow agent (ui-labs)
-        uses: actions/checkout@v7
+      - name: Setup .NET 11 preview SDK
+        uses: actions/setup-dotnet@v5
         with:
-          repository: lextudio/ui-labs
-          ref: master
-          path: ui-labs
-          fetch-depth: 0
-          submodules: recursive
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+      - name: Setup .NET 10 runtime
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'NuGet.config', 'source/**/*.csproj', 'source/**/*.props') }}
+
+      - name: Prepare GitHub Packages restore access
+        shell: pwsh
+        run: |
+          Copy-Item NuGet.config "$env:RUNNER_TEMP/NuGet.config"
+          dotnet nuget update source openavalon-github --username $env:GITHUB_ACTOR --password $env:GITHUB_TOKEN --store-password-in-clear-text --configfile "$env:RUNNER_TEMP/NuGet.config"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore dependencies
-        run: dotnet restore source/AvalonDock.sln
+        shell: pwsh
+        run: dotnet restore source/AvalonDock.sln --configfile "$env:RUNNER_TEMP/NuGet.config"
 
-      # No --warnaserror on the command line: it overrides every project in the graph, and the graph
-      # now reaches outside this repository. TestApp and MVVMTestApp reference the DevFlow agent from
-      # source, so the switch was escalating warnings in third-party ui-labs code (CS0649 on interop
-      # structs whose fields the native side assigns) into build failures here. It also overrode the
+      # No --warnaserror on the command line: it overrides every project in the graph, including the
       # six projects in this repo that deliberately opt out with TreatWarningsAsErrors=false. The
       # zero-warnings policy is unaffected: source/Directory.Build.props sets
       # TreatWarningsAsErrors=true for everything that has not opted out.
@@ -101,32 +102,9 @@ jobs:
     # line so it actually gates pull requests.
     continue-on-error: true
 
-    env:
-      # TestApp references the DevFlow agent from source (see its csproj); point it at the checkout
-      # below. MSBuild picks environment variables up as properties, so the fixture's own
-      # `dotnet run` inherits this too.
-      DevFlowAgentPath: ${{ github.workspace }}/ui-labs/src/DevFlow
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      # The agent is referenced from source, not as a package: the Linux XTest input backend it needs
-      # is on upstream master (lextudio/ui-labs#3, merged) but is not in any release yet - the newest,
-      # 0.2.2, predates the merge, and 0.2.0 additionally shipped an Aarch64-only DLL that fails to
-      # load on x64. Drop this step and restore the PackageReference in TestApp.csproj/MVVMTestApp.csproj
-      # once a release contains it.
-      - name: Checkout DevFlow agent (ui-labs)
-        uses: actions/checkout@v7
-        with:
-          repository: lextudio/ui-labs
-          ref: master
-          path: ui-labs
-          # Its projects run GitVersion.MsBuild, which refuses to work on the shallow clone
-          # actions/checkout produces by default ("Repository is a shallow clone").
-          fetch-depth: 0
-          # Agent.Core compiles sources out of the external/maui-labs submodule.
-          submodules: recursive
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6

@@ -1,11 +1,5 @@
 <Project Sdk="LibreWPF.Sdk">
   <PropertyGroup>
-    <!-- Where the DevFlow agent sources live. Defaults to a ui-labs checkout beside this repository;
-         override with -p:DevFlowAgentPath=<dir> (CI checks it out inside the workspace). -->
-    <DevFlowAgentPath Condition="'$(DevFlowAgentPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../ui-labs/src/DevFlow'))</DevFlowAgentPath>
-  </PropertyGroup>
-
-  <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>AvalonDock.MVVMTestApp</RootNamespace>
@@ -46,11 +40,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Local checkout rather than the published package: see the matching comment in
-         TestApp.csproj. the Linux mouse injection (XTest) is on upstream
-         master (lextudio/ui-labs#3, merged) but not in a release yet. -->
-    <ProjectReference Include="$(DevFlowAgentPath)/LeXtudio.DevFlow.Agent.LibreWpf/LeXtudio.DevFlow.Agent.LibreWpf.csproj" />
-    <ProjectReference Include="$(DevFlowAgentPath)/LeXtudio.DevFlow.Agent.Core/LeXtudio.DevFlow.Agent.Core.csproj" />
+    <!-- The DevFlow agent comes from nuget.org. -->
+    <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.1" />
+    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
   </ItemGroup>
 
   <ItemGroup>

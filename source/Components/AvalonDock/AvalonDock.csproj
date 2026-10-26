@@ -14,8 +14,9 @@
 	     failing the ProGPU build. -->
 	<PropertyGroup>
 		<RootNamespace>AvalonDock</RootNamespace>
-		<PackageId>Dirkster.AvalonDock</PackageId>
-		<TargetFrameworks>$(ComponentTargetFrameworks)</TargetFrameworks>
+		<PackageId>Dirkster.AvalonDock.LibreWPF</PackageId>
+		<NoWarn>$(NoWarn);NU5104</NoWarn>
+		<TargetFramework>net10.0-windows</TargetFramework>
 		<UseWPF>true</UseWPF>
         <SignAssembly>true</SignAssembly>
         <AssemblyOriginatorKeyFile>sn.snk</AssemblyOriginatorKeyFile>
