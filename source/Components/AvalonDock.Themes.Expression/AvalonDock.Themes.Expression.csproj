@@ -1,4 +1,10 @@
-<Project Sdk="LibreWPF.Sdk">
+<Project>
+	<!-- Same pattern as AvalonDock.csproj: the Sdk attribute cannot carry a Condition. Off Windows
+	     LibreWPF.Sdk (ProGPU) builds the project; on Windows the stock WindowsDesktop SDK does, as upstream.
+	     Importing LibreWPF.Sdk on Windows as well adds every XAML file as a Page twice (NETSDK1022).
+	     Keep the matching Sdk.targets import at the end of the file. -->
+	<Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
+	<Import Project="Sdk.props" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
 	<PropertyGroup>
 		<RootNamespace>AvalonDock.Themes</RootNamespace>
 		<PackageId>Dirkster.AvalonDock.Themes.Expression</PackageId>
@@ -16,4 +22,6 @@
 	<ItemGroup>
 		<ProjectReference Include="..\AvalonDock\AvalonDock.csproj"/>
 	</ItemGroup>
+	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
+	<Import Project="Sdk.targets" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
 </Project>
