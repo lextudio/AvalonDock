@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also publish the validated packages to GitHub Packages (opendevelop branch only; no tag, no GitHub Release)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -173,7 +178,13 @@ jobs:
   publish:
     name: Publish GitHub Packages
     needs: validate
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Two ways in: pushing a v* tag (also creates the GitHub Release), or running this workflow by hand
+    # with the `publish` input on the opendevelop branch (packages only). GitHub Packages never lets a
+    # version be overwritten and --skip-duplicate keeps the first upload, so a manual publish is limited
+    # to the branch whose packages are meant to be shipped.
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/opendevelop')
     runs-on: windows-2025
     steps:
       # global.json pins an SDK, and `dotnet nuget push` resolves it before running.
@@ -191,17 +202,24 @@ jobs:
           path: nupkg
       - name: Determine whether this is the latest release
         id: version
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           version="${GITHUB_REF#refs/tags/v}"
           highest=$(git tag -l 'v*' | sed 's#^v##' | sort -V | tail -1)
           newest=$(printf '%s\n%s\n' "$highest" "$version" | sort -V | tail -1)
           if [ "$newest" = "$version" ]; then echo 'MAKE_LATEST=true' >> "$GITHUB_OUTPUT"; else echo 'MAKE_LATEST=false' >> "$GITHUB_OUTPUT"; fi
-      - name: Verify tag matches package versions
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Verify package versions
         shell: pwsh
         run: |
-          $version = "$env:GITHUB_REF_NAME".Substring(1)
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            # A release tag names the version.
+            $version = "$env:GITHUB_REF_NAME".Substring(1)
+          } else {
+            # A manual publish has no tag: the version is the repository's own.
+            [xml]$props = Get-Content source/Directory.Build.props
+            $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
+          }
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           foreach ($package in Get-ChildItem nupkg/*.nupkg) {
             $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
@@ -224,6 +242,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
