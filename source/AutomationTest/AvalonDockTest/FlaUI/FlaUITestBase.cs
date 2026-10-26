@@ -234,7 +234,23 @@ namespace AvalonDockTest.FlaUITests
 				}
 			}
 
-			return FindByName(toolWindowName);
+			var fallback = FindByName(toolWindowName);
+			if (fallback == null)
+			{
+				TestContext.Out.WriteLine($"[ToolWindow lookup failed] {toolWindowName}");
+				foreach (var element in MainWindow.FindAllDescendants())
+				{
+					try
+					{
+						TestContext.Out.WriteLine($"Name='{element.Name}' Id='{element.AutomationId}' Type='{element.ControlType}' Parent='{element.Parent?.Name}' Bounds='{element.BoundingRectangle}'");
+					}
+					catch (Exception exception)
+					{
+						TestContext.Out.WriteLine($"[Unavailable UIA element] {exception.GetType().Name}");
+					}
+				}
+			}
+			return fallback;
 		}
 
 		protected bool IsToolWindowDocked(string toolWindowName)
