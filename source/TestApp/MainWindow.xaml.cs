@@ -49,6 +49,9 @@ namespace TestApp
 		private static Point? s_positionedMainContentOrigin;
 		private DispatcherTimer _mainWindowPositionGuardTimer;
 		private Point _mainWindowPositionGuardOrigin;
+
+		// null = show the real modal dialog; otherwise the test has already decided the answer.
+		private string _dialogAnswer;
 		private Point? _mainWindowPositionGuardViolation;
 
 		private enum GetWindowCmd : uint
@@ -258,10 +261,6 @@ namespace TestApp
 			}
 		}
 
-		[DevFlowAction("avd.splitter.width",
-			Description = "Sets DockingManager.GridSplitterWidth/Height. The docked splitter is only 6px " +
-			              "wide; widening it tests whether the resize cursor simply never appears, or " +
-			              "appears but is too narrow a target to notice.")]
 		public string SetSplitterWidth(double width)
 		{
 			dockManager.GridSplitterWidth = width;
@@ -274,10 +273,6 @@ namespace TestApp
 			return $"GridSplitterWidth/Height = {width}";
 		}
 
-		[DevFlowAction("avd.query.splitters",
-			Description = "Reports every LayoutGridResizerControl in the docked layout: the Cursor it " +
-			              "carries, its size, and whether it is hit-test visible. Distinguishes 'the " +
-			              "cursor was never assigned' from 'assigned but never applied'.")]
 		public string QuerySplitters()
 		{
 			var list = new List<Dictionary<string, object>>();
@@ -331,12 +326,8 @@ namespace TestApp
 			}
 		}
 
-		[DevFlowAction("avd.timer.query",
-			Description = "Returns the DispatcherTimer-driven counter. Auto-hide's close timer is a " +
-			              "DispatcherTimer, so whether this advances tells you if auto-close can work.")]
 		public string TimerQuery() => TestTimer.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-		[DevFlowAction("avd.menu.trace", Description = "Returns (and clears) the recorded menu open/close trace")]
 		public string MenuTrace()
 		{
 			lock (_menuTrace)
@@ -371,7 +362,6 @@ namespace TestApp
 			_lastInputOriginalSource = e.OriginalSource?.GetType().FullName;
 		}
 
-
 		/// <summary>
 		/// TestTimer Dependency Property
 		/// </summary>
@@ -388,8 +378,6 @@ namespace TestApp
 			get => (int)GetValue(TestTimerProperty);
 			set => SetValue(TestTimerProperty, value);
 		}
-
-
 
 		/// <summary>
 		/// TestBackground Dependency Property
@@ -408,8 +396,6 @@ namespace TestApp
 			set => SetValue(TestBackgroundProperty, value);
 		}
 
-
-
 		/// <summary>
 		/// FocusedElement Dependency Property
 		/// </summary>
@@ -426,7 +412,6 @@ namespace TestApp
 			get => (string)GetValue(FocusedElementProperty);
 			set => SetValue(FocusedElementProperty, value);
 		}
-
 
 		private void OnLayoutRootPropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
 		{
@@ -525,7 +510,7 @@ namespace TestApp
 
 		private void DockManager_DocumentClosing(object sender, DocumentClosingEventArgs e)
 		{
-			if (MessageBox.Show("Are you sure you want to close the document?", "AvalonDock Sample", MessageBoxButton.YesNo) == MessageBoxResult.No)
+			if (AskYesNo("Are you sure you want to close the document?", "AvalonDock Sample") == false)
 				e.Cancel = true;
 		}
 
@@ -553,7 +538,7 @@ namespace TestApp
 
 		private void OnToolWindow1Hiding(object sender, System.ComponentModel.CancelEventArgs e)
 		{
-			if (MessageBox.Show("Are you sure you want to hide this tool?", "AvalonDock", MessageBoxButton.YesNo) == MessageBoxResult.No)
+			if (AskYesNo("Are you sure you want to hide this tool?", "AvalonDock") == false)
 				e.Cancel = true;
 		}
 
@@ -687,7 +672,6 @@ namespace TestApp
 			return false;
 		}
 
-		[DevFlowAction("avd.float", Description = "Float an anchorable by ContentId")]
 		public string FloatAnchorable(string contentId)
 		{
 			var anchorable = dockManager.Layout.Descendents()
@@ -700,10 +684,6 @@ namespace TestApp
 			return $"Floated '{contentId}'";
 		}
 
-		[DevFlowAction("avd.position-floating",
-			Description = "Move the floating window containing the given ContentId to a fixed screen " +
-			              "position (default: clear of the main window and screen origin, where other " +
-			              "app windows commonly sit and can steal synthetic clicks aimed at the tester).")]
 		public string PositionFloatingWindow(string contentId, double left = 900, double top = 200)
 		{
 			var floating = FindVisibleFloatingWindow(contentId);
@@ -723,7 +703,6 @@ namespace TestApp
 			return $"Positioned floating window for '{contentId}' at {left},{top}";
 		}
 
-		[DevFlowAction("avd.query.floating-zorder", Description = "Compare a floating window's OS z-order against the main window")]
 		public string QueryFloatingZOrder(string contentId)
 		{
 			var floating = FindVisibleFloatingWindow(contentId);
@@ -779,7 +758,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.query.x11-stacking", Description = "Dump the X server's window stacking order and which entries belong to this app")]
 		public string QueryX11Stacking()
 		{
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -806,7 +784,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.query.macos-view-tree", Description = "Return the native AppKit view class tree for main, floating, or overlay window diagnostics")]
 		public string QueryMacOSViewTree(string target = "main", string contentId = "dragTestTool")
 		{
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -873,7 +850,6 @@ namespace TestApp
 			return utf8 == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(utf8);
 		}
 
-		[DevFlowAction("avd.dock", Description = "Dock a floating anchorable back to main layout")]
 		public string DockAnchorable(string contentId)
 		{
 			var anchorable = dockManager.Layout.FloatingWindows
@@ -886,7 +862,6 @@ namespace TestApp
 			return $"Docked '{contentId}'";
 		}
 
-		[DevFlowAction("avd.hide", Description = "Hide an anchorable")]
 		public string HideAnchorable(string contentId)
 		{
 			var anchorable = dockManager.Layout.Descendents()
@@ -898,7 +873,6 @@ namespace TestApp
 			return $"Hidden '{contentId}'";
 		}
 
-		[DevFlowAction("avd.show", Description = "Show a hidden anchorable")]
 		public string ShowAnchorable(string contentId)
 		{
 			var anchorable = dockManager.Layout.Descendents()
@@ -912,7 +886,6 @@ namespace TestApp
 			return $"Shown '{contentId}'";
 		}
 
-		[DevFlowAction("avd.add-documents", Description = "Add two test documents to the first document pane")]
 		public string AddDocuments()
 		{
 			var firstPane = dockManager.Layout.Descendents()
@@ -935,7 +908,6 @@ namespace TestApp
 		// Viewbox scale) can be told apart from a screenshot.
 		private Window _borderReproWindow;
 
-		[DevFlowAction("avd.debug.border-repro", Description = "Show a window reproducing the compass Border rendering")]
 		public string ShowBorderRepro(double left = 60, double top = 700)
 		{
 			_borderReproWindow?.Close();
@@ -996,7 +968,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.add-anchorable", Description = "Add a new anchorable to the layout")]
 		public string AddAnchorable(string title = null)
 		{
 			var anchorable = new LayoutAnchorable
@@ -1008,7 +979,6 @@ namespace TestApp
 			return $"Added anchorable '{anchorable.ContentId}'";
 		}
 
-		[DevFlowAction("avd.test-layout.reset", Description = "Reset to a deterministic AvalonDock drag/drop test layout")]
 		public string ResetDragDropTestLayout()
 		{
 			foreach (var floatingWindow in dockManager.FloatingWindows.ToArray())
@@ -1100,7 +1070,6 @@ namespace TestApp
 			return QueryLayout();
 		}
 
-		[DevFlowAction("avd.switch-theme", Description = "Switch AvalonDock theme by tag name")]
 		public string SwitchTheme(string themeTag)
 		{
 			Theme theme = themeTag switch
@@ -1133,7 +1102,6 @@ namespace TestApp
 			return $"Switched to '{themeTag}'";
 		}
 
-		[DevFlowAction("avd.layout.serialize", Description = "Serialize current layout to XML and return it")]
 		public string SerializeLayout()
 		{
 			var serializer = new XmlLayoutSerializer(dockManager);
@@ -1145,7 +1113,6 @@ namespace TestApp
 			return reader.ReadToEnd();
 		}
 
-		[DevFlowAction("avd.layout.restore", Description = "Restore layout from XML string")]
 		public string RestoreLayout(string xml)
 		{
 			var serializer = new XmlLayoutSerializer(dockManager);
@@ -1154,7 +1121,6 @@ namespace TestApp
 			return "Layout restored";
 		}
 
-		[DevFlowAction("avd.query.layout", Description = "Query current layout state as JSON")]
 		public string QueryLayout()
 		{
 			var anchorables = dockManager.Layout.Descendents()
@@ -1166,6 +1132,7 @@ namespace TestApp
 					["isVisible"] = a.IsVisible,
 					["isHidden"] = a.IsHidden,
 					["isFloat"] = a.IsFloating,
+					["isAutoHidden"] = a.IsAutoHidden,
 					["canClose"] = a.CanClose,
 					["canHide"] = a.CanHide,
 				}).ToList();
@@ -1208,7 +1175,6 @@ namespace TestApp
 			return System.Text.Json.JsonSerializer.Serialize(result);
 		}
 
-			[DevFlowAction("avd.query.bounds", Description = "Query screen bounds for a dock test target")]
 			public string QueryBounds(string target, string contentId = null)
 			{
 				FrameworkElement element = target switch
@@ -1243,7 +1209,6 @@ namespace TestApp
 				return System.Text.Json.JsonSerializer.Serialize(CreateBoundsPayload(target, contentId, element));
 			}
 
-			[DevFlowAction("avd.query.drag-handle", Description = "Query a verified screen drag start point for an AvalonDock target")]
 			public string QueryDragHandle(string target, string contentId = null)
 			{
 				if (target == "floating-caption")
@@ -1314,7 +1279,6 @@ namespace TestApp
 				return System.Text.Json.JsonSerializer.Serialize(result);
 			}
 
-			[DevFlowAction("avd.debug-show-overlay", Description = "Force-show the DockingManager compass overlay (with a visible debug border) without a drag; optionally enter a drop-target zone to also render its blue preview box, for inspecting overlay/preview alignment vs the manager")]
 			public string DebugShowOverlay(string previewZone = null)
 			{
 				OverlayWindow.DebugBorderEnabled = true;
@@ -1409,7 +1373,6 @@ namespace TestApp
 				["height"] = r.Height,
 			};
 
-			[DevFlowAction("avd.debug-hide-overlay", Description = "Hide the debug compass overlay shown by avd.debug-show-overlay")]
 			public string DebugHideOverlay()
 			{
 				((IOverlayWindowHost)dockManager).HideOverlayWindow();
@@ -1417,7 +1380,6 @@ namespace TestApp
 				return "Hidden debug overlay";
 			}
 
-			[DevFlowAction("avd.activate", Description = "Activate and foreground the AvalonDock test window")]
 			public string ActivateTestWindow()
 			{
 				if (WindowState == WindowState.Minimized)
@@ -1431,7 +1393,6 @@ namespace TestApp
 				});
 			}
 
-			[DevFlowAction("avd.activate-floating", Description = "Raise a floating AvalonDock window before native input safety checks")]
 			public string ActivateFloatingWindow(string contentId)
 			{
 				var floating = FindVisibleFloatingWindow(contentId)
@@ -1442,7 +1403,6 @@ namespace TestApp
 				return "Activated floating window";
 			}
 
-			[DevFlowAction("avd.position-main-window", Description = "Move the AvalonDock test window to the primary-screen test area")]
 			public string PositionMainWindow(double left = 50, double top = 40)
 			{
 				if (WindowState == WindowState.Minimized)
@@ -1469,7 +1429,6 @@ namespace TestApp
 				});
 			}
 
-			[DevFlowAction("avd.main-window-position-guard.start", Description = "Start recording any native main-window movement during the current test")]
 			public string StartMainWindowPositionGuard()
 			{
 				_mainWindowPositionGuardTimer?.Stop();
@@ -1488,7 +1447,6 @@ namespace TestApp
 				});
 			}
 
-			[DevFlowAction("avd.main-window-position-guard.query", Description = "Report whether the native main window moved since the guard was started")]
 			public string QueryMainWindowPositionGuard()
 			{
 				SampleMainWindowPositionGuard();
@@ -1558,7 +1516,6 @@ namespace TestApp
 #endif
 			}
 
-			[DevFlowAction("avd.input.reset", Description = "Reset AvalonDock routed input diagnostics")]
 			public string ResetInputDiagnostics()
 			{
 				if (Mouse.Captured is Menu || Mouse.Captured is MenuItem)
@@ -1570,7 +1527,6 @@ namespace TestApp
 			return "reset";
 		}
 
-		[DevFlowAction("avd.input.query", Description = "Query AvalonDock routed input diagnostics")]
 		public string QueryInputDiagnostics()
 		{
 			var result = new Dictionary<string, object>
@@ -1587,11 +1543,6 @@ namespace TestApp
 			return System.Text.Json.JsonSerializer.Serialize(result);
 		}
 
-		[DevFlowAction("avd.menu.capture-test",
-			Description = "Diagnostic: attempts the subtree mouse capture that WPF's menu mode requires " +
-			              "(Mouse.Capture(menu, CaptureMode.SubTree)) and reports whether it succeeds. " +
-			              "Menus open on click only if this capture takes; run it with and without a " +
-			              "floating window present to see whether extra windows break it.")]
 		public string MenuCaptureTest()
 		{
 			var report = new Dictionary<string, object>
@@ -1631,10 +1582,6 @@ namespace TestApp
 			return System.Text.Json.JsonSerializer.Serialize(report);
 		}
 
-		[DevFlowAction("avd.menu.probe",
-			Description = "Diagnostic: reports the main menu's items and tries to open one submenu " +
-			              "programmatically (IsSubmenuOpen=true), capturing any exception. Separates " +
-			              "'menu mode / popup cannot open at all' from 'the click never reaches it'.")]
 		public string MenuProbe(string header = "Layout")
 		{
 			var items = mainMenu.Items.OfType<MenuItem>().ToList();
@@ -1743,9 +1690,6 @@ namespace TestApp
 			return current;
 		}
 
-		[DevFlowAction("avd.menu.items",
-			Description = "List the main menu: without a path the top-level headers, with a 'Layout/Save' " +
-			              "path the children of that submenu (header, enabled, checkable, checked, command)")]
 		public string MenuItems(string path = null)
 		{
 			var parent = FindMenuItem(path, out var error);
@@ -1769,8 +1713,6 @@ namespace TestApp
 		/// command, an item with a Click handler raises Click with itself as the sender (the handlers
 		/// here read <c>(sender as MenuItem).Header</c>, so the item has to be the source).
 		/// </summary>
-		[DevFlowAction("avd.menu.invoke",
-			Description = "Invoke a menu item by header path, e.g. 'Layout/Save/Layout_1' or 'Tools/New floating window'")]
 		public string InvokeMenuItem(string path)
 		{
 			var item = FindMenuItem(path, out var error);
@@ -1803,7 +1745,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.menu.close", Description = "Close every open menu and context menu so the next gesture is not swallowed")]
 		public string CloseMenus()
 		{
 			foreach (var item in FindVisualDescendants<MenuItem>(mainMenu))
@@ -1834,8 +1775,6 @@ namespace TestApp
 		/// menu, so the useful assertion is that the gesture is a no-op: the tab survives and the app
 		/// is still answering.
 		/// </summary>
-		[DevFlowAction("avd.tab.right-click",
-			Description = "Raise the tab's right-click event (document or anchorable) and report whether a context menu opened")]
 		public string RightClickTab(string title, string kind = "document")
 		{
 			var roots = GetAvalonDockVisualRoots().ToArray();
@@ -1881,9 +1820,9 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.query.window", Description = "Query the main window's position, size and state")]
 		public string QueryWindow() => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
 		{
+			["title"] = Title,
 			["left"] = Left,
 			["top"] = Top,
 			["width"] = ActualWidth,
@@ -1893,7 +1832,6 @@ namespace TestApp
 			["managerHosted"] = layoutRoot.Children.Contains(dockManager),
 		});
 
-		[DevFlowAction("avd.window.resize", Description = "Resize the main window without moving it, as dragging its edge does")]
 		public string ResizeWindow(double width, double height)
 		{
 			if (width <= 0 || height <= 0)
@@ -1905,11 +1843,262 @@ namespace TestApp
 			return QueryWindow();
 		}
 
-		[DevFlowAction("avd.transparency.probe",
-			Description = "Diagnostic A/B: opens two plain top-level windows next to each other - one " +
-			              "with AllowsTransparency=true/WindowStyle=None, one opaque - each containing a " +
-			              "solid red block. Isolates 'does the backend render transparent windows at all' " +
-			              "from anything AvalonDock-specific. Pass false to close them again.")]
+		/// <summary>
+		/// Answers the sample's two confirmation dialogs from the test: a modal <c>MessageBox</c> cannot
+		/// be clicked on a headless runner, and the dialog itself is not what the suite is about - the
+		/// answer is. <c>ask</c> (the default) restores the real dialog.
+		/// </summary>
+		public string AnswerDialogs(string answer)
+		{
+			var mode = (answer ?? "ask").Trim().ToLowerInvariant();
+			switch (mode)
+			{
+				case "ask":
+					_dialogAnswer = null;
+					break;
+				case "yes":
+				case "no":
+					_dialogAnswer = mode;
+					break;
+				default:
+					throw new ArgumentException("Use 'yes', 'no' or 'ask'.", nameof(answer));
+			}
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["answer"] = mode,
+			});
+		}
+
+		private bool? AskYesNo(string message, string caption)
+		{
+			if (_dialogAnswer != null)
+				return _dialogAnswer == "yes";
+
+			return MessageBox.Show(message, caption, MessageBoxButton.YesNo) == MessageBoxResult.Yes;
+		}
+
+		/// <summary>Adds the two documents by clicking the sample's own button, so its handler runs.</summary>
+		public string AddTwoDocuments()
+		{
+			var button = FindDocumentContentElement<Button>("document1", b => string.Equals(b.Content?.ToString(), "Click to add 2 documents", StringComparison.Ordinal));
+			if (button == null)
+				return "The add-documents button was not found in Document 1.";
+
+			button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+			return QueryLayout();
+		}
+
+		public string ActivateDocument(string contentIdOrTitle)
+		{
+			var document = FindDocument(contentIdOrTitle);
+			if (document == null)
+				throw new InvalidOperationException($"No document matches '{contentIdOrTitle}'.");
+
+			document.IsActive = true;
+			dockManager.UpdateLayout();
+			return QueryLayout();
+		}
+
+		/// <summary>
+		/// Reports what a document actually hosts, scoped to that document: the text of its TextBoxes and
+		/// the labels of its Buttons. The FlaUI port asserted "some button exists in the window", which
+		/// passed even when the document content was empty; this says which controls the document has.
+		/// </summary>
+		public string DocumentContent(string contentIdOrTitle)
+		{
+			var document = FindDocument(contentIdOrTitle);
+			if (document == null)
+				throw new InvalidOperationException($"No document matches '{contentIdOrTitle}'.");
+
+			var view = dockManager.GetLayoutItemFromModel(document)?.View;
+			var textBoxes = view == null
+				? new List<TextBox>()
+				: FindVisualDescendants<TextBox>(view).ToList();
+			var buttons = view == null
+				? new List<Button>()
+				: FindVisualDescendants<Button>(view).ToList();
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["contentId"] = document.ContentId,
+				["title"] = document.Title,
+				["isActive"] = document.IsActive,
+				["isVisible"] = document.IsVisible,
+				["viewLoaded"] = view != null,
+				["textBoxes"] = textBoxes.Select(t => t.Text).ToArray(),
+				["buttons"] = buttons.Select(b => b.Content?.ToString()).ToArray(),
+			});
+		}
+
+		/// <summary>The focused element, and whether it sits inside the docking manager's content.</summary>
+		public string QueryFocus() => System.Text.Json.JsonSerializer.Serialize(DescribeFocus());
+
+		/// <summary>Focuses the first TextBox a document or anchorable hosts (a click would do the same).</summary>
+		public string SetFocus(string contentIdOrTitle)
+		{
+			var view = FindContentElement(contentIdOrTitle);
+			if (view == null)
+				throw new InvalidOperationException($"No document or anchorable matches '{contentIdOrTitle}'.");
+
+			var textBox = FindVisualDescendants<TextBox>(view).FirstOrDefault();
+			if (textBox == null)
+				throw new InvalidOperationException($"'{contentIdOrTitle}' hosts no TextBox to focus.");
+
+			textBox.Focus();
+			Keyboard.Focus(textBox);
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Input);
+			return System.Text.Json.JsonSerializer.Serialize(DescribeFocus());
+		}
+
+		/// <summary>
+		/// Raises a key through WPF's routed input on the focused element. The agent can insert text into
+		/// a control on every platform, but it cannot hold a modifier or press an arrow key there (Linux
+		/// injects one keysym, macOS goes through cliclick, Windows through SendInput - three different
+		/// implementations, none of them chords), so the gesture is delivered the way a keyboard would
+		/// deliver it to the element that has focus. A handler that inspects live <c>Keyboard.Modifiers</c>
+		/// still sees no modifier; <see cref="DescribeFocus"/> and the handled flag are what a test can
+		/// assert on.
+		/// </summary>
+		public string RaiseKey(string key, string modifiers = null)
+		{
+			if (!Enum.TryParse<Key>(key, ignoreCase: true, out var parsedKey))
+				throw new ArgumentException($"'{key}' is not a WPF Key name.", nameof(key));
+
+			var target = Keyboard.FocusedElement as UIElement ?? dockManager;
+			var source = PresentationSource.FromVisual(target) ?? PresentationSource.FromVisual(this);
+			var before = DescribeFocus();
+
+			var preview = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+			{
+				RoutedEvent = Keyboard.PreviewKeyDownEvent,
+			};
+			target.RaiseEvent(preview);
+
+			var handled = preview.Handled;
+			if (!handled)
+			{
+				var down = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+				{
+					RoutedEvent = Keyboard.KeyDownEvent,
+				};
+				target.RaiseEvent(down);
+				handled = down.Handled;
+			}
+
+			target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+			{
+				RoutedEvent = Keyboard.KeyUpEvent,
+			});
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Input);
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["key"] = parsedKey.ToString(),
+				["modifiers"] = modifiers ?? string.Empty,
+				["handled"] = handled,
+				["focusBefore"] = before,
+				["focusAfter"] = DescribeFocus(),
+				["navigatorEnabled"] = dockManager.ShowNavigator,
+			});
+		}
+
+		/// <summary>
+		/// Types text through WPF's text-input pipeline into whatever has focus, which is the part a
+		/// keyboard drives. The agent can also insert text into a control by element id, but that path
+		/// targets a control the caller has to name; this one goes wherever the app's focus is, exactly
+		/// like the keys a user presses.
+		/// </summary>
+		public string RaiseTextInput(string text)
+		{
+			if (text == null)
+				throw new ArgumentNullException(nameof(text));
+
+			if (Keyboard.FocusedElement is not UIElement target)
+				throw new InvalidOperationException("Nothing has focus; focus a control before typing into it.");
+
+			var composition = new TextComposition(InputManager.Current, target, text);
+			target.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition)
+			{
+				RoutedEvent = TextCompositionManager.TextInputEvent,
+			});
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Input);
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["text"] = text,
+				["focus"] = DescribeFocus(),
+			});
+		}
+
+		private Dictionary<string, object> DescribeFocus()
+		{
+			var focused = Keyboard.FocusedElement as DependencyObject;
+			var owner = focused is FrameworkElement element && element.Parent != null ? element.Parent.GetType().Name : null;
+			var insideManager = focused is DependencyObject node && IsDescendantOf(node, dockManager);
+			return new Dictionary<string, object>
+			{
+				["type"] = focused?.GetType().Name,
+				["name"] = (focused as FrameworkElement)?.Name,
+				["owner"] = owner,
+				["insideManager"] = insideManager,
+				["isDropDownControlArea"] = focused is DropDownControlArea,
+				["root"] = focused == null ? null : GetVisualRoot(focused),
+			};
+		}
+
+		private string GetVisualRoot(DependencyObject node)
+		{
+			DependencyObject current = node;
+			while (true)
+			{
+				var parent = VisualTreeHelper.GetParent(current);
+				if (parent == null)
+					return current.GetType().Name;
+				current = parent;
+			}
+		}
+
+		private static bool IsDescendantOf(DependencyObject node, DependencyObject ancestor)
+		{
+			for (var current = node; current != null; current = VisualTreeHelper.GetParent(current))
+			{
+				if (ReferenceEquals(current, ancestor))
+					return true;
+			}
+
+			return false;
+		}
+
+		private LayoutDocument FindDocument(string contentIdOrTitle)
+			=> dockManager.Layout.Descendents().OfType<LayoutDocument>()
+				.FirstOrDefault(d => string.Equals(d.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+					|| string.Equals(d.Title, contentIdOrTitle, StringComparison.Ordinal));
+
+		private T FindDocumentContentElement<T>(string contentIdOrTitle, Func<T, bool> predicate)
+			where T : DependencyObject
+		{
+			var view = FindContentElement(contentIdOrTitle);
+			return view == null ? null : FindVisualDescendants<T>(view).FirstOrDefault(predicate);
+		}
+
+		/// <summary>The element that renders a document's or an anchorable's content.</summary>
+		private FrameworkElement FindContentElement(string contentIdOrTitle)
+		{
+			var content = dockManager.Layout.Descendents().OfType<LayoutContent>()
+				.FirstOrDefault(c =>
+					string.Equals(c.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+					|| string.Equals(c.Title, contentIdOrTitle, StringComparison.Ordinal));
+			if (content == null)
+				return null;
+
+			var item = dockManager.GetLayoutItemFromModel(content);
+			if (item?.View != null)
+				return item.View;
+
+			return content.Content as FrameworkElement;
+		}
+
 		public string TransparencyProbe(bool show = true)
 		{
 			foreach (var w in Application.Current.Windows.OfType<Window>()
@@ -1971,12 +2160,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.overlay.diagnostics",
-			Description = "Diagnostic: show the drop-target compass persistently WITHOUT a drag, by " +
-			              "driving IOverlayWindowHost.ShowOverlayWindow + DragEnter directly. Lets " +
-			              "overlay-window RENDERING be judged independently of drag/hit-test logic. " +
-			              "Requires a floating window to exist (call avd.float first). Returns the " +
-			              "overlay's geometry and visibility state.")]
 		public string ShowOverlayDiagnostics(bool show = true)
 		{
 			var fwc = dockManager.FloatingWindows.FirstOrDefault();
@@ -2068,7 +2251,6 @@ namespace TestApp
 			return list;
 		}
 
-		[DevFlowAction("avd.query.platform", Description = "Query LibreWPF platform coordinate diagnostics")]
 		public string QueryPlatformDiagnostics()
 		{
 			var source = PresentationSource.FromVisual(this);
@@ -2167,14 +2349,6 @@ namespace TestApp
 			return null;
 		}
 
-		[DevFlowAction("avd.query.active-drop-targets",
-			Description = "During an active drag (a floating window whose caption is currently being " +
-			              "dragged), returns every currently-visible compass drop-target indicator as " +
-			              "{type, x, y, width, height, centerX, centerY} - type is a DropTargetType name " +
-			              "(e.g. DockingManagerDockLeft, AnchorablePaneDockInside). Which indicators are " +
-			              "visible depends on which host area the pointer is currently over, matching " +
-			              "real AvalonDock drag behavior, so move the pointer near the desired target's " +
-			              "pane/edge before calling this.")]
 		public string QueryActiveDropTargets()
 		{
 			var results = new List<Dictionary<string, object>>();
@@ -2239,7 +2413,7 @@ namespace TestApp
 		// layout item, so a live count shows whether that registration is being released again when
 		// the item goes away. A count that climbs across repeated float/dock/restore cycles is the
 		// leak that also makes InternalAddLogicalChild's debug assertion fire on a later re-add.
-		[DevFlowAction("avd.query.logical-children", Description = "Count the DockingManager's live logical children")]
+
 		public string QueryLogicalChildren()
 		{
 			var live = 0;
@@ -2258,7 +2432,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.query.drag-state", Description = "Query live floating-window drag state")]
 		public string QueryDragState()
 		{
 			return System.Text.Json.JsonSerializer.Serialize(dockManager.FloatingWindows.Select(floating =>
@@ -2290,7 +2463,6 @@ namespace TestApp
 			}).ToArray());
 		}
 
-		[DevFlowAction("avd.query.cursor", Description = "Query the native cursor position in screen coordinates")]
 		public string QueryNativeCursor()
 		{
 			var point = PlatformHelper.GetCursorPosition();
@@ -2301,7 +2473,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.complete-current-drop", Description = "Complete the current held AvalonDock drag after its preview has been inspected")]
 		public string CompleteCurrentDrop(string contentId)
 		{
 			var floating = FindVisibleFloatingWindow(contentId);
@@ -2336,7 +2507,6 @@ namespace TestApp
 			};
 		}
 
-		[DevFlowAction("avd.hit-test", Description = "Hit test a screen point against the AvalonDock manager")]
 		public string HitTest(double screenX, double screenY)
 		{
 			var screenPoint = new Point(screenX, screenY);
@@ -2395,7 +2565,6 @@ namespace TestApp
 			});
 		}
 
-		[DevFlowAction("avd.query.tabs", Description = "Query visible anchorable tabs and diagnostic bounds")]
 			public string QueryAnchorableTabs()
 			{
 				var tabs = FindVisualDescendants<LayoutAnchorableTabItem>(dockManager)
@@ -2414,7 +2583,6 @@ namespace TestApp
 				return System.Text.Json.JsonSerializer.Serialize(tabs);
 			}
 
-			[DevFlowAction("avd.query.anchorable-drag-surfaces", Description = "Query visible anchorable title/control drag surface diagnostics")]
 			public string QueryAnchorableDragSurfaces()
 			{
 				var roots = GetAvalonDockVisualRoots().ToArray();
@@ -2826,7 +2994,6 @@ namespace TestApp
 				.LastOrDefault();
 		}
 
-		[DevFlowAction("avd.new-floating", Description = "Create a new floating anchorable window")]
 		public string NewFloatingWindow(string title = null)
 		{
 			var anchorable = new LayoutAnchorable
@@ -2927,7 +3094,6 @@ namespace TestApp
 			return false;
 		}
 
-		[DevFlowAction("avd.close-document", Description = "Close a document by ContentId")]
 		public string CloseDocument(string contentId)
 		{
 			var doc = dockManager.Layout.Descendents()

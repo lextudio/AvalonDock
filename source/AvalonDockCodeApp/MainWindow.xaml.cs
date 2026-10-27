@@ -278,7 +278,6 @@ namespace ToggleTestApp
 		// rather than at a test-only reimplementation of it.
 
 		/// <summary>Queries the sidebar toggle buttons, grouped by zone.</summary>
-		[DevFlowAction("avd.query.toggle-bars", Description = "Query every sidebar toggle button: zone, title, content id, checked state and bounds")]
 		public string QueryToggleBars()
 		{
 			var buttons = FindToggleButtons();
@@ -299,7 +298,6 @@ namespace ToggleTestApp
 		}
 
 		/// <summary>Queries the anchorables of the layout and whether they are showing or auto-hidden.</summary>
-		[DevFlowAction("avd.query.anchorables", Description = "Query the layout's anchorables: title, content id, visibility, auto-hide state")]
 		public string QueryAnchorables()
 		{
 			var anchorables = dockManager.Layout.Descendents().OfType<LayoutAnchorable>().ToArray();
@@ -337,7 +335,6 @@ namespace ToggleTestApp
 		/// assertion here is driven - the sidebar is a plain control tree, and its behaviour is what
 		/// these tests are about.
 		/// </remarks>
-		[DevFlowAction("avd.toggle.click", Description = "Press a sidebar toggle button (content id, else title) and report the resulting state")]
 		public string ClickToggleButton(string contentIdOrTitle)
 		{
 			var button = FindToggleButton(contentIdOrTitle);
@@ -356,7 +353,6 @@ namespace ToggleTestApp
 		}
 
 		/// <summary>Queries the keyboard shortcuts the manager registered on the window.</summary>
-		[DevFlowAction("avd.query.shortcuts", Description = "Query the window's key bindings: gesture, toolbox and whether the gesture is registered")]
 		public string QueryShortcuts()
 		{
 			var bindings = InputBindings.OfType<KeyBinding>()
@@ -388,7 +384,6 @@ namespace ToggleTestApp
 		/// the command the binding carries. avd.query.shortcuts exposes the registration itself when
 		/// a test needs to assert on it directly.
 		/// </remarks>
-		[DevFlowAction("avd.shortcut.invoke", Description = "Execute the key binding registered for a gesture (e.g. 'Ctrl+Alt+E')")]
 		public string InvokeShortcut(string gesture)
 		{
 			if (string.IsNullOrWhiteSpace(gesture))
@@ -417,7 +412,6 @@ namespace ToggleTestApp
 		/// whatever a previous test opened is enough to get back to that state without restarting the
 		/// process. Documents are left alone; a test that adds them removes them itself.
 		/// </remarks>
-		[DevFlowAction("avd.layout.reset", Description = "Delete the saved layout files and close every sidebar section")]
 		public string ResetLayout()
 		{
 			foreach (var path in new[] { LayoutFilePath, UnknownToolboxLayoutFilePath })
@@ -436,7 +430,6 @@ namespace ToggleTestApp
 		}
 
 		/// <summary>Saves the layout to the app's layout file (the _Layout > Save Layout menu).</summary>
-		[DevFlowAction("avd.layout.save", Description = "Save the current layout to the app's layout file")]
 		public string SaveLayoutToFile()
 		{
 			new XmlLayoutSerializer(dockManager).Serialize(LayoutFilePath);
@@ -448,7 +441,6 @@ namespace ToggleTestApp
 		}
 
 		/// <summary>Loads the saved layout (the _Layout > Load Layout menu).</summary>
-		[DevFlowAction("avd.layout.load", Description = "Load the app's saved layout file")]
 		public string LoadLayoutFromFile()
 		{
 			LoadLayout(LayoutFilePath);
@@ -456,7 +448,6 @@ namespace ToggleTestApp
 		}
 
 		/// <summary>Loads a layout carrying a tool window no toolbox answers to.</summary>
-		[DevFlowAction("avd.layout.load-unknown", Description = "Load a saved layout that also carries a tool window unknown to this app")]
 		public string LoadLayoutWithUnknownToolbox()
 		{
 			OnLoadLayoutWithUnknownToolbox(this, new RoutedEventArgs());
