@@ -369,6 +369,13 @@ namespace TestApp
 			_lastDockManagerMousePosition = Mouse.GetPosition(dockManager);
 			_lastDockManagerLeftButton = Mouse.LeftButton;
 			_lastInputOriginalSource = e.OriginalSource?.GetType().FullName;
+			if (kind == "preview-down" && e.OriginalSource is DependencyObject gapSource)
+			{
+				var chain = new List<string>();
+				for (DependencyObject d = gapSource; d != null && chain.Count < 14; d = VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d))
+					chain.Add(d is FrameworkElement fe && !string.IsNullOrEmpty(fe.Name) ? $"{d.GetType().Name}#{fe.Name}" : d.GetType().Name);
+				Console.Error.WriteLine($"[GAP-TRACE] preview-down at {Mouse.GetPosition(dockManager)} source chain: {string.Join(" < ", chain)}");
+			}
 			if (kind == "down")
 				_lastDownHandled = e.Handled;
 		}
