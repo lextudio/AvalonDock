@@ -1522,7 +1522,9 @@ namespace AvalonDock.Controls
 			private readonly LayoutFloatingWindowControl _owner;
 			private HwndSource _wpfContentHost = null;
 			private Border _rootPresenter = null;
+			private AdornerDecorator _rootDecorator = null;
 			private DockingManager _manager = null;
+			private bool _presenterIsVisualChild;
 
 			/// <summary>
 			/// Initializes a new instance of the <see cref="FloatingWindowContentHost"/> class.
@@ -1533,7 +1535,37 @@ namespace AvalonDock.Controls
 				_owner = owner;
 				var binding = new Binding(nameof(SizeToContent)) { Source = _owner };
 				BindingOperations.SetBinding(this, SizeToContentProperty, binding);
+
+				// A portable visual-only host never sees BuildWindowCore, so its presenter has to exist
+				// before the HwndHost attaches it. Content is assigned by the object initializer in
+				// CoerceContentValue right after this constructor returns.
+				if (HostsContentAsVisualChild) CreateRootPresenter();
 			}
+
+			/// <summary>
+			/// Gets a value indicating whether this host draws its content as an ordinary WPF visual
+			/// instead of hosting it in a native child window.
+			/// </summary>
+			/// <remarks>
+			/// A Win32 child window does not compose into a portable (LibreWPF) presentation source, so
+			/// the content hosted in <see cref="_wpfContentHost"/> would render nothing at all - and
+			/// asking the backend for that child window fails outright. Same reasoning and the same
+			/// switch as <see cref="LayoutAutoHideWindowControl"/>. Deliberately not applied on Windows,
+			/// where the child window is the airspace workaround that keeps WPF content from being
+			/// painted over native content.
+			/// </remarks>
+			private static bool HostsContentAsVisualChild { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+#if LIBREWPF
+			/// <summary>
+			/// Uses this control's ordinary visual tree for a portable presentation source.
+			/// </summary>
+			/// <remarks>
+			/// <c>HwndHost.UsesPortableVisualHosting</c> exists only in LibreWPF. A Windows host compiles
+			/// against real WPF, where there is nothing to override (CS0115), and defines no LIBREWPF.
+			/// </remarks>
+			protected override bool UsesPortableVisualHosting => HostsContentAsVisualChild;
+#endif
 
 			/// <summary>
 			/// Gets the root visual.
@@ -1565,7 +1597,17 @@ namespace AvalonDock.Controls
 			/// <param name="newValue">The new value.</param>
 			protected virtual void OnContentChanged(UIElement oldValue, UIElement newValue)
 			{
-				if (_rootPresenter != null) _rootPresenter.Child = Content;
+				if (_presenterIsVisualChild)
+				{
+					// Keep the decorator that wraps the content: it supplies the adorner layer the
+					// template draws resize grips and drag adorners on.
+					if (_rootDecorator != null) _rootDecorator.Child = newValue;
+				}
+				else if (_rootPresenter != null)
+				{
+					_rootPresenter.Child = newValue;
+				}
+
 				if (oldValue is FrameworkElement oldContent) oldContent.SizeChanged -= Content_SizeChanged;
 				if (newValue is FrameworkElement newContent) newContent.SizeChanged += Content_SizeChanged;
 			}
@@ -1614,13 +1656,28 @@ namespace AvalonDock.Controls
 					UsesPerPixelOpacity = true,
 				});
 
-				_rootPresenter = new Border { Child = new AdornerDecorator { Child = Content }, Focusable = true };
-				AutomationProperties.SetName(_rootPresenter, "FloatingWindowHost");
-				_rootPresenter.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { Source = _owner });
+				CreateRootPresenter();
 				_wpfContentHost.RootVisual = _rootPresenter;
 				_manager = _owner.Model.Root.Manager;
 				_manager.InternalAddLogicalChild(_rootPresenter);
 				return new HandleRef(this, _wpfContentHost.Handle);
+			}
+
+			/// <summary>
+			/// Creates the presenter that renders the floating window content, and - on a portable
+			/// backend - takes ownership of it as this host's only visual child.
+			/// </summary>
+			private void CreateRootPresenter()
+			{
+				_rootDecorator = new AdornerDecorator { Child = Content };
+				_rootPresenter = new Border { Child = _rootDecorator, Focusable = true };
+				AutomationProperties.SetName(_rootPresenter, "FloatingWindowHost");
+				_rootPresenter.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { Source = _owner });
+
+				if (!HostsContentAsVisualChild) return;
+				AddVisualChild(_rootPresenter);
+				AddLogicalChild(_rootPresenter);
+				_presenterIsVisualChild = true;
 			}
 
 			/// <inheritdoc/>
@@ -1642,8 +1699,13 @@ namespace AvalonDock.Controls
 			{
 				if (_rootPresenter != null)
 				{
-					_manager?.InternalRemoveLogicalChild(_rootPresenter);
+					if (_presenterIsVisualChild)
+						RemoveLogicalChild(_rootPresenter);
+					else
+						_manager?.InternalRemoveLogicalChild(_rootPresenter);
+
 					_rootPresenter = null;
+					_rootDecorator = null;
 				}
 
 				_manager = null;
@@ -1654,11 +1716,39 @@ namespace AvalonDock.Controls
 			}
 
 			/// <inheritdoc/>
+			protected override int VisualChildrenCount => _presenterIsVisualChild ? 1 : base.VisualChildrenCount;
+
+			/// <inheritdoc/>
+			protected override Visual GetVisualChild(int index)
+				=> _presenterIsVisualChild && index == 0 ? _rootPresenter : base.GetVisualChild(index);
+
+			/// <inheritdoc/>
+			protected override System.Collections.IEnumerator LogicalChildren
+				=> _presenterIsVisualChild && _rootPresenter != null
+					? new UIElement[] { _rootPresenter }.GetEnumerator()
+					: base.LogicalChildren;
+
+			/// <inheritdoc/>
 			protected override Size MeasureOverride(Size constraint)
 			{
+				if (_presenterIsVisualChild)
+				{
+					if (_rootPresenter == null) return base.MeasureOverride(constraint);
+					_rootPresenter.Measure(constraint);
+					return _rootPresenter.DesiredSize;
+				}
+
 				if (Content == null) return base.MeasureOverride(constraint);
 				Content.Measure(constraint);
 				return Content.DesiredSize;
+			}
+
+			/// <inheritdoc/>
+			protected override Size ArrangeOverride(Size finalSize)
+			{
+				if (!_presenterIsVisualChild) return base.ArrangeOverride(finalSize);
+				_rootPresenter?.Arrange(new Rect(finalSize));
+				return finalSize;
 			}
 
 			/// <summary>
