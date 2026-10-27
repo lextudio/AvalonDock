@@ -1,33 +1,14 @@
-<Project>
-	<!-- Same pattern as AvalonDock.csproj: the Sdk attribute cannot carry a Condition. Off Windows
-	     LibreWPF.Sdk (ProGPU) builds the project; on Windows the stock WindowsDesktop SDK does, as upstream.
-	     Importing LibreWPF.Sdk on Windows as well adds every XAML file as a Page twice (NETSDK1022).
-	     Keep the matching Sdk.targets import at the end of the file. -->
-	<Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
-	<Import Project="Sdk.props" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <RootNamespace>AvalonDock.MVVMTestApp</RootNamespace>
-    <AssemblyName>MVVMTestApp</AssemblyName>
+    <TargetFrameworks>net9.0-windows;net48</TargetFrameworks>
     <UseWPF>true</UseWPF>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <GitVersion_NoFetchEnabled>true</GitVersion_NoFetchEnabled>
-    <GitVersionTaskEnabled>false</GitVersionTaskEnabled>
-    <NoWarn>$(NoWarn);NU1504</NoWarn>
   </PropertyGroup>
 
-  <!-- LeXtudio.DevFlow.Agent.WPF pulls newer preview transport packages than ProGPU.Wpf.Sdk's own
-       pin, so these are raised to the higher version to resolve NU1605 downgrade-treated-as-error.
-       The SDK contributes both packages itself at the lower version, so this pin is a second item
-       for the same package and NuGet reports NU1504. Update= cannot be used instead: the SDK adds
-       its items after the project body is evaluated, so an Update here matches nothing and the pin
-       silently reverts. Suppressing the warning keeps the higher version explicit and deliberate;
-       without the suppression the Windows job fails, since it builds with warnings as errors. -->
+  <!-- The DevFlow diagnostic actions belong to the LibreWPF twin (MVVMTestApp.LibreWPF.csproj). -->
   <ItemGroup>
-    <PackageReference Include="System.Windows.Extensions" Version="11.0.0-preview.5.26302.115" />
-    <PackageReference Include="System.IO.Packaging" Version="11.0.0-preview.5.26302.115" />
+    <Compile Remove="DockDiagnostics.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,12 +24,6 @@
     <ProjectReference Include="..\Components\AvalonDock.Themes.VS2013\AvalonDock.Themes.VS2013.csproj" />
     <ProjectReference Include="..\Components\AvalonDock.Serializer.Xml\AvalonDock.Serializer.Xml.csproj" />
     <ProjectReference Include="..\Components\AvalonDock\AvalonDock.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The DevFlow agent comes from nuget.org. -->
-    <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.1" />
-    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -81,17 +56,4 @@
     </Page>
   </ItemGroup>
 
-  <Target Name="RemoveDesktopRuntimeFramework" AfterTargets="ProcessFrameworkReferences" BeforeTargets="FixupRuntimeFrameworkVersions">
-    <ItemGroup>
-      <RuntimeFramework Remove="@(RuntimeFramework)" Condition="'%(RuntimeFramework.Identity)' == 'Microsoft.WindowsDesktop.App'" />
-    </ItemGroup>
-  </Target>
-  <Target Name="RemoveTransitiveDesktopFramework" AfterTargets="ResolvePackageAssets" BeforeTargets="AddTransitiveFrameworkReferences">
-    <ItemGroup>
-      <TransitiveFrameworkReference Remove="@(TransitiveFrameworkReference)" Condition="'%(TransitiveFrameworkReference.Identity)' == 'Microsoft.WindowsDesktop.App'" />
-    </ItemGroup>
-  </Target>
-
-	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
-	<Import Project="Sdk.targets" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
 </Project>

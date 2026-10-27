@@ -2,18 +2,11 @@
 	<PropertyGroup>
 		<!-- This fork can be checked out below OpenDevelop, which uses central package management. -->
 		<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-		<!-- LibreWPF.Sdk defaults its net10 support packages (incl. Cryptography.Xml/Pkcs) to 10.0.11, flagged NU1902/NU1903; 10.0.13 is patched. -->
-		<ProGpuWpfNet10SupportPackageVersion>10.0.13</ProGpuWpfNet10SupportPackageVersion>
 		<!-- Centralized Target Frameworks -->
-		<ComponentTargetFrameworks>net10.0-windows</ComponentTargetFrameworks>
-		<TestTargetFrameworks>net10.0-windows</TestTargetFrameworks>
+		<ComponentTargetFrameworks>net9.0-windows;net10.0-windows;net48</ComponentTargetFrameworks>
+		<TestTargetFrameworks>net9.0-windows;net10.0-windows;net48</TestTargetFrameworks>
 		<LangVersion>13</LangVersion>
 		<EnableWindowsTargeting>true</EnableWindowsTargeting>
-
-		<!-- Set wherever LibreWPF.Sdk is the SDK in use (see the conditional Sdk imports in the
-		     component projects). Code that touches ProGPU-only API must sit behind this, because those
-		     types do not exist in the upstream WPF build. -->
-		<DefineConstants Condition="'$(OS)' != 'Windows_NT'">$(DefineConstants);LIBREWPF</DefineConstants>
 
 		<!-- Version Information -->
 		<VersionPrefix>5.0.1</VersionPrefix>
@@ -38,19 +31,31 @@
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
 	<!--
-		LibreWPF: WPF components use Sdk="LibreWPF.Sdk" so builds on non-Windows hosts run on the
-		portable ProGPU/Silk.NET platform. On Windows hosts the LibreWPF SDK must behave exactly
-		like Microsoft.NET.Sdk.WindowsDesktop, so its portable mode is switched off.
-		(This file is imported after the LibreWPF Sdk.props defaults, so plain assignments win.)
+		The LibreWPF line: projects named *.LibreWPF.csproj (and the temporary *.LibreWPF_*_wpftmp.csproj the markup compiler derives) sit next to their WPF twin, build with
+		LibreWPF.Sdk on every OS and define LIBREWPF; the WPF projects never import that SDK. They are
+		not linked from another folder because the WPF markup compiler flattens the BAML of XAML pages
+		that live outside the project folder (two Generic.xaml files overwrite each other), so each one
+		compiles the sources of its own folder and keeps its obj/bin apart from the WPF project's.
+		See docs/librewpf.md, section 11.
 	-->
-	<PropertyGroup Condition="'$(_ProGpuWpfSdkImported)' == 'true' And $([MSBuild]::IsOSPlatform('Windows'))">
-		<ProGpuWpfUsePortableFrameworkReferences>false</ProGpuWpfUsePortableFrameworkReferences>
-		<ProGpuWpfUsePortablePlatform>false</ProGpuWpfUsePortablePlatform>
-		<ProGpuWpfEnablePortableBootstrap>false</ProGpuWpfEnablePortableBootstrap>
-		<ProGpuWpfEnableWin32CompatShim>false</ProGpuWpfEnableWin32CompatShim>
-		<ProGpuWpfUseCurrentRuntimeIdentifier>false</ProGpuWpfUseCurrentRuntimeIdentifier>
-		<RuntimeIdentifier></RuntimeIdentifier>
+	<PropertyGroup Condition="$(MSBuildProjectName.Contains('.LibreWPF'))">
+		<BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\librewpf\</BaseIntermediateOutputPath>
+		<MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+		<BaseOutputPath>$(MSBuildProjectDirectory)\bin\librewpf\</BaseOutputPath>
+		<DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+		<TargetFramework>net10.0-windows</TargetFramework>
 		<UseWPF>true</UseWPF>
+		<!-- Defined by the project, not by $(OS): ProGPU-only code sits behind it in the shared sources. -->
+		<DefineConstants>$(DefineConstants);LIBREWPF</DefineConstants>
+		<!-- LibreWPF.Sdk defaults its net10 support packages (incl. Cryptography.Xml/Pkcs) to 10.0.11, flagged NU1902/NU1903; 10.0.13 is patched. -->
+		<ProGpuWpfNet10SupportPackageVersion>10.0.13</ProGpuWpfNet10SupportPackageVersion>
+		<NoWarn>$(NoWarn);NU5104</NoWarn>
+		<!-- The fork's dev-time quality gates belong to the WPF line; the LibreWPF packages are
+		     OpenDevelop dependencies and must build cleanly on the ProGPU platform. -->
+		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+		<RunAnalyzers>false</RunAnalyzers>
+		<EnableNETAnalyzers>false</EnableNETAnalyzers>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- Pack the shared root LICENSE into every package without copying it per project -->

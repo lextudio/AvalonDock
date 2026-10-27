@@ -3,10 +3,14 @@ using System.Windows;
 using AvalonDock;
 using AvalonDock.Core;
 using AvalonDock.DependencyInjection;
+#if DEVFLOW
 using LeXtudio.DevFlow.Agent.Core;
 using LeXtudio.DevFlow.Agent.Wpf;
+#endif
 using Microsoft.Extensions.DependencyInjection;
+#if DEVFLOW
 using Microsoft.Maui.DevFlow.Agent.Core;
+#endif
 using ToggleTestApp.ViewModels;
 
 namespace ToggleTestApp;
@@ -14,7 +18,9 @@ namespace ToggleTestApp;
 public partial class App : Application
 {
 	private IServiceProvider? _serviceProvider;
+#if DEVFLOW
 	private WpfAgentService? _devFlowService;
+#endif
 
 	protected override void OnStartup(StartupEventArgs e)
 	{
@@ -22,10 +28,12 @@ public partial class App : Application
 
 		// Attached before the window is shown so an integration test can query the very first layout
 		// state (sidebar buttons and their checked states) without racing the startup.
+#if DEVFLOW
 		_devFlowService = this.AddWpfDevFlowAgent(new AgentOptions
 		{
 			Port = GetAgentPort(),
 		});
+#endif
 
 		var services = new ServiceCollection();
 		ConfigureServices(services);
@@ -35,6 +43,7 @@ public partial class App : Application
 		mainWindow.Show();
 	}
 
+#if DEVFLOW
 	/// <summary>
 	/// The DevFlow port: DEVFLOW_AGENT_PORT when the fixture set one, otherwise the assembly's own
 	/// declared port (see DevFlowIntegrationTests for the constant this app is tested on), otherwise
@@ -48,6 +57,7 @@ public partial class App : Application
 
 		return DevFlowAgentPortResolver.GetPortFromAssemblyMetadata() ?? AgentOptions.DefaultPort;
 	}
+#endif
 
 	private static void ConfigureServices(IServiceCollection services)
 	{

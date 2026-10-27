@@ -19,8 +19,10 @@ using AvalonDock.Layout;
 using AvalonDock.Serializer.Xml;
 using AvalonDock.Themes;
 using AvalonDock.Themes.VS;
+#if DEVFLOW
 using LeXtudio.DevFlow.Agent.Core;
 using Microsoft.Maui.DevFlow.Agent.Core;
+#endif
 using ToggleTestApp.ViewModels;
 
 namespace ToggleTestApp

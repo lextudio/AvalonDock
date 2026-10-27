@@ -32,8 +32,10 @@ using AvalonDock;
 using AvalonDock.Themes;
 using AvalonDock.Themes.VS;
 using System.Diagnostics.CodeAnalysis;
+#if DEVFLOW
 using LeXtudio.DevFlow.Agent.Core;
 using Microsoft.Maui.DevFlow.Agent.Core;
+#endif
 
 namespace TestApp
 {
@@ -41,7 +43,9 @@ namespace TestApp
 	/// Interaction logic for MainWindow.xaml
 	/// </summary>
 	[SuppressMessage("Maintainability", "CA1506:Avoid excessive class coupling", Justification = "MainWindow intentionally orchestrates many UI framework types in this sample app.")]
+#if DEVFLOW
 	[DevFlowUIThread]
+#endif
 	public partial class MainWindow : Window
 	{
 		private const string ObjC = "/usr/lib/libobjc.dylib";

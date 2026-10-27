@@ -1,13 +1,8 @@
-<Project>
-    <!-- On Windows this is an ordinary WPF + WinForms app, exactly as it was before the
-         cross-platform work: stock SDK, real WPF, real WinForms. LibreWPF.Sdk is only used where
-         it is actually needed, off Windows. The Sdk attribute cannot carry a Condition, so the
-         SDK is imported explicitly; keep the matching Sdk.targets import at the end. -->
-    <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
-    <Import Project="Sdk.props" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
     <PropertyGroup>
         <RootNamespace>TestApp</RootNamespace>
-        <TargetFramework>net10.0-windows</TargetFramework>
+        <!-- The fork's test hooks use APIs newer than .NET Framework (upstream also built net48). -->
+        <TargetFrameworks>net9.0-windows;net10.0-windows</TargetFrameworks>
         <UseWPF>true</UseWPF>
         <UseWindowsForms>true</UseWindowsForms>
         <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -22,34 +17,14 @@
         <AssemblyOriginatorKeyFile>../Components/AvalonDock/sn.snk</AssemblyOriginatorKeyFile>
         <!-- Sample app: allow warnings -->
         <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-        <EnableWindowsTargeting>true</EnableWindowsTargeting>
-        <GitVersion_NoFetchEnabled>true</GitVersion_NoFetchEnabled>
-        <GitVersionTaskEnabled>false</GitVersionTaskEnabled>
-        <ProGpuWpfRuntimeFrameworkVersion>11.0.0-preview.1.26104.118</ProGpuWpfRuntimeFrameworkVersion>
-        <!-- Only the canonical LibreWinForms packages are published on nuget.org; the SDK's default
-             LibreWinForms.Compatibility.System.Windows.Forms runtime is not. -->
-        <ProGpuWpfUseCanonicalLibreWinForms Condition="'$(OS)' != 'Windows_NT'">true</ProGpuWpfUseCanonicalLibreWinForms>
        </PropertyGroup>
     <ItemGroup>
         <Resource Include="**\*.png" />
     </ItemGroup>
-    <!-- Gated the same way as the transitive removal below. These exist so the portable build does
-         not drag in the Windows desktop framework; applying them where the portable framework
-         references are NOT in use strips the real Microsoft.WindowsDesktop.App out from under the
-         app, which leaves WindowsFormsHost with nothing to host. -->
-    <ItemGroup Condition="'$(ProGpuWpfUsePortableFrameworkReferences)' == 'true'">
-        <FrameworkReference Remove="Microsoft.WindowsDesktop.App" />
-        <FrameworkReference Remove="Microsoft.WindowsDesktop.App.WPF" />
+    <!-- The DevFlow automation surface belongs to the LibreWPF twin (TestApp.LibreWPF.csproj). -->
+    <ItemGroup>
+        <Compile Remove="MainWindow.DevFlowActions.cs" />
     </ItemGroup>
-    <Target Name="_TestAppRemoveWindowsDesktopTransitiveFrameworkReferences"
-            BeforeTargets="AddTransitiveFrameworkReferences"
-            Condition="'$(ProGpuWpfUsePortableFrameworkReferences)' == 'true'">
-        <ItemGroup>
-            <TransitiveFrameworkReference Remove="Microsoft.WindowsDesktop.App" />
-            <TransitiveFrameworkReference Remove="Microsoft.WindowsDesktop.App.WPF" />
-            <TransitiveFrameworkReference Remove="Microsoft.WindowsDesktop.App.WindowsForms" />
-        </ItemGroup>
-    </Target>
     <PropertyGroup>
         <ApplicationManifest>app.manifest</ApplicationManifest>
     </PropertyGroup>
@@ -64,12 +39,4 @@
       <ProjectReference Include="..\Components\AvalonDock.Themes.VS2010\AvalonDock.Themes.VS2010.csproj" />
       <ProjectReference Include="..\Components\AvalonDock.Themes.VS2013\AvalonDock.Themes.VS2013.csproj" />
     </ItemGroup>
-    <ItemGroup>
-      <!-- The DevFlow agent comes from nuget.org. -->
-      <PackageReference Include="LeXtudio.DevFlow.Agent.Wpf" Version="0.3.1" Condition="'$(OS)' == 'Windows_NT'" />
-      <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.1" Condition="'$(OS)' != 'Windows_NT'" />
-      <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
-    </ItemGroup>
-    <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
-    <Import Project="Sdk.targets" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
 </Project>

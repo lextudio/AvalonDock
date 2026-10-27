@@ -33,28 +33,34 @@ namespace AvalonDock.Platform
 
 	private static INativeWindowService CreateNativeWindowService()
 	{
+#if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 			return new MacOSNativeWindowService();
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 			return new LinuxNativeWindowService();
+#endif
 		return new WindowsNativeWindowService();
 	}
 
 	private static ICursorService CreateCursorService()
 	{
+#if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 			return new MacOSCursorService();
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 			return new LinuxCursorService();
+#endif
 		return new WindowsCursorService();
 	}
 
 	private static IDpiService CreateDpiService()
 	{
+#if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 			return new MacOSDpiService();
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 			return new LinuxDpiService();
+#endif
 		return new WindowsDpiService();
 	}
 	}

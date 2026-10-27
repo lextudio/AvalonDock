@@ -1,5 +1,7 @@
 using System.Windows;
+#if DEVFLOW
 using LeXtudio.DevFlow.Agent.Wpf;
+#endif
 
 namespace AvalonDock.MVVMTestApp
 {
@@ -14,7 +16,9 @@ namespace AvalonDock.MVVMTestApp
 			// Embed the DevFlow HTTP agent (default port 9223) so integration tests can
 			// drive the running dock and query its layout. See DockDiagnostics for the
 			// [DevFlowAction] verbs.
+#if DEVFLOW
 			this.AddWpfDevFlowAgent();
+#endif
 		}
 	}
 }

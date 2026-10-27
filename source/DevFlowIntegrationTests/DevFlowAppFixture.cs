@@ -172,7 +172,7 @@ public class DevFlowAppFixture : IAsyncLifetime
         // each on a windows-11-arm runner - 27 minutes for 80 tests - so a prebuilt app is started
         // directly from its output folder.
         var appDll = noBuild
-            ? Path.Combine(testAppDir, "bin", "Debug", "net10.0-windows", _projectName + ".dll")
+            ? Path.Combine(testAppDir, "bin", "librewpf", "Debug", "net10.0-windows", _projectName + ".dll")
             : null;
         var startDirect = appDll != null && File.Exists(appDll);
 
@@ -183,7 +183,7 @@ public class DevFlowAppFixture : IAsyncLifetime
                 FileName = dotnetPath,
                 Arguments = startDirect
                     ? $"\"{appDll}\""
-                    : $"run {(noBuild ? "--no-build " : string.Empty)}--project \"{testAppDir}\"",
+                    : $"run {(noBuild ? "--no-build " : string.Empty)}--project \"{Path.Combine(testAppDir, _projectName + ".LibreWPF.csproj")}\"",
                 WorkingDirectory = startDirect ? Path.GetDirectoryName(appDll)! : testAppDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
