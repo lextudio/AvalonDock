@@ -109,7 +109,6 @@ namespace AvalonDock.Controls
 		/// <inheritdoc/>
 		protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
 		{
-			System.Console.Error.WriteLine($"[GAP-TRACE] TabItem down title={Model?.Title} handled={e.Handled}");
 			base.OnMouseLeftButtonDown(e);
 
 			// Start a drag & drop action for a LayoutAnchorable
@@ -143,9 +142,7 @@ namespace AvalonDock.Controls
 		{
 			_isMouseDown = false;
 			base.OnMouseLeftButtonUp(e);
-			System.Console.Error.WriteLine($"[GAP-TRACE] TabItem up title={Model?.Title} active-before={Model?.IsActive}");
 			Model.IsActive = true;
-			System.Console.Error.WriteLine($"[GAP-TRACE] TabItem up after active={Model?.IsActive} rootActive={Model?.Root?.ActiveContent?.Title}");
 		}
 
 		/// <inheritdoc/>

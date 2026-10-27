@@ -148,6 +148,10 @@ jobs:
             Write-Warning "Cannot read the OpenAvalon revision of LibreWPF.Sdk $sdk; restoring without a cache hit."
             $revision = "run-$env:GITHUB_RUN_ID"
           }
+          # The DevFlow packages are republished at the nuget.org version number for the same reason.
+          $devflow = @(gh api --paginate "/orgs/lextudio/packages/nuget/lextudio.devflow.agent.core/versions?per_page=100" --jq ".[] | select(.name == `"0.3.1`") | .updated_at" 2>$null) |
+            Where-Object { "$_" -match '\S' } | Select-Object -First 1
+          if ($devflow) { $revision = "$revision-$devflow" }
           "revision=$($revision -replace '[^0-9A-Za-z]', '')" >> $env:GITHUB_OUTPUT
 
       - name: Cache NuGet packages

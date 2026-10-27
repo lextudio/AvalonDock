@@ -166,7 +166,6 @@ namespace AvalonDock.Controls
 		/// <param name="anchor">The anchor.</param>
 		internal void Show(LayoutAnchorControl anchor)
 		{
-			System.Console.Error.WriteLine($"[GAP-TRACE] AutoHideWindow.Show model-already-set={_model != null} anchorSide={(anchor.Model?.Parent?.Parent as LayoutAnchorSide) != null} manager={anchor.Model?.Root?.Manager != null}");
 			if (_model != null) throw new InvalidOperationException();
 
 			// The anchorable can be selected while the layout is being restructured and its

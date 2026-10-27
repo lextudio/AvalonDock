@@ -29,7 +29,6 @@ namespace AvalonDock.Controls
 		/// <param name="anchor">The anchor.</param>
 		public void ShowAutoHideWindow(LayoutAnchorControl anchor)
 		{
-			System.Console.Error.WriteLine($"[GAP-TRACE] Manager.ShowAutoHideWindow current==anchor={_currentAutohiddenAnchor.GetValueOrDefault<LayoutAnchorControl>() == anchor}");
 			if (_currentAutohiddenAnchor.GetValueOrDefault<LayoutAnchorControl>() != anchor)
 			{
 				StopCloseTimer();
@@ -71,7 +70,6 @@ namespace AvalonDock.Controls
 
 				try
 				{
-					System.Console.Error.WriteLine($"[GAP-TRACE] CloseTimer tick mouseOver={autoHideWindow.IsWin32MouseOver} resizing={autoHideWindow.IsResizing} active={(autoHideWindow.Model as LayoutAnchorable)?.IsActive}");
 					if (autoHideWindow.IsWin32MouseOver || 
 						autoHideWindow.IsResizing ||
 						autoHideWindow.Model is LayoutAnchorable model && model.IsActive)

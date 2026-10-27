@@ -369,59 +369,6 @@ namespace TestApp
 			_lastDockManagerMousePosition = Mouse.GetPosition(dockManager);
 			_lastDockManagerLeftButton = Mouse.LeftButton;
 			_lastInputOriginalSource = e.OriginalSource?.GetType().FullName;
-			if (kind == "preview-down" && e.OriginalSource is DependencyObject gapSource)
-			{
-				var chain = new List<string>();
-				for (DependencyObject d = gapSource; d != null && chain.Count < 14; d = VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d))
-					chain.Add(d is FrameworkElement fe && !string.IsNullOrEmpty(fe.Name) ? $"{d.GetType().Name}#{fe.Name}" : d.GetType().Name);
-				Console.Error.WriteLine($"[GAP-TRACE] preview-down at {Mouse.GetPosition(dockManager)} source chain: {string.Join(" < ", chain)}");
-				static string Chain(DependencyObject d)
-				{
-					var c = new List<string>();
-					for (; d != null && c.Count < 6; d = VisualTreeHelper.GetParent(d)) c.Add(d.GetType().Name);
-					return string.Join(" < ", c);
-				}
-				var pos = Mouse.GetPosition(dockManager);
-				var input = dockManager.InputHitTest(pos) as DependencyObject;
-				var visual = VisualTreeHelper.HitTest(dockManager, pos)?.VisualHit;
-				var winPos = Mouse.GetPosition(this);
-				var winInput = this.InputHitTest(winPos) as DependencyObject;
-				foreach (var anchorCtl in FindVisualDescendants<LayoutAnchorControl>(dockManager))
-				{
-					if ((anchorCtl.Model as LayoutContent)?.Title != "AutoHide1 Content") continue;
-					var center = new Point(anchorCtl.ActualWidth / 2, anchorCtl.ActualHeight / 2);
-					void DumpSub(DependencyObject d, int depth)
-					{
-						if (d is Visual dv)
-						{
-							var ue2 = d as UIElement; var fe2 = d as FrameworkElement;
-							var cb = VisualTreeHelper.GetContentBounds(dv);
-							var dc = VisualTreeHelper.GetDescendantBounds(dv);
-							var mid = fe2 != null ? new Point(fe2.ActualWidth / 2, fe2.ActualHeight / 2) : new Point();
-							var hh = VisualTreeHelper.HitTest(dv, mid)?.VisualHit;
-							var bg = (d as System.Windows.Controls.Border)?.Background?.ToString() ?? (d as System.Windows.Controls.Control)?.Background?.ToString();
-							var txt = (d as System.Windows.Controls.TextBlock)?.Text;
-							Console.Error.WriteLine($"[GAP-SUB] {new string(' ', depth * 2)}{d.GetType().Name} vis={ue2?.Visibility} isVis={ue2?.IsVisible} size={fe2?.ActualWidth}x{fe2?.ActualHeight} opacity={ue2?.Opacity} bg={bg} text={txt} content={cb} desc={dc} hitMid={hh?.GetType().Name ?? "null"}");
-						}
-						for (int i = 0; i < VisualTreeHelper.GetChildrenCount(d) && depth < 8; i++)
-							DumpSub(VisualTreeHelper.GetChild(d, i), depth + 1);
-					}
-					DumpSub(anchorCtl, 0);
-					for (DependencyObject anc = anchorCtl; anc != null; anc = VisualTreeHelper.GetParent(anc))
-					{
-						if (anc is not Visual av) continue;
-						Point pa;
-						try { pa = anchorCtl.TransformToAncestor(av).Transform(center); } catch { break; }
-						var h = VisualTreeHelper.HitTest(av, pa)?.VisualHit as DependencyObject;
-						bool inside = false;
-						for (var x = h; x != null; x = VisualTreeHelper.GetParent(x)) if (ReferenceEquals(x, anchorCtl)) { inside = true; break; }
-						var ue = anc as UIElement; var fe = anc as FrameworkElement;
-						Console.Error.WriteLine($"[GAP-ANC] {anc.GetType().Name}{(fe != null && fe.Name != "" ? "#" + fe.Name : "")} p={pa} reachesAnchor={inside} hit={h?.GetType().Name} hitTestVisible={ue?.IsHitTestVisible} clip={ue?.Clip?.Bounds} vtransform={VisualTreeHelper.GetTransform(av)?.Value} voffset={VisualTreeHelper.GetOffset(av)} size={(fe != null ? fe.ActualWidth + "x" + fe.ActualHeight : "")}");
-						if (anc == dockManager) break;
-					}
-				}
-				Console.Error.WriteLine($"[GAP-TRACE] InputHitTest(manager)={Chain(input)} | VisualTreeHelper(manager)={Chain(visual)} | window pos={winPos} InputHitTest(window)={Chain(winInput)} | DirectlyOver={Chain(Mouse.DirectlyOver as DependencyObject)}");
-			}
 			if (kind == "down")
 				_lastDownHandled = e.Handled;
 		}

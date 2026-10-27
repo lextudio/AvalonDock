@@ -154,11 +154,39 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cliclick
 
+      # OpenAvalon republishes the same 0.1.0-preview.N versions with new bits, and NuGet never looks a
+      # package up again once it is in the global packages folder - so a cache keyed only on the pinned
+      # version would keep testing an older build of the same version. The feed's own revision of the
+      # pinned LibreWPF.Sdk is what the key is derived from, which also proves the feed is reachable
+      # before anything is cached.
+      - name: Resolve the OpenAvalon package revision
+        id: feed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $sdk = (Get-Content global.json -Raw | ConvertFrom-Json).'msbuild-sdks'.'LibreWPF.Sdk'
+          if (-not $sdk) { throw 'global.json does not pin LibreWPF.Sdk.' }
+          $revisions = @(gh api --paginate "/orgs/lextudio/packages/nuget/librewpf.sdk/versions?per_page=100" --jq ".[] | select(.name == `"$sdk`") | .updated_at")
+          $revision = @($revisions | Where-Object { "$_" -match '\S' }) | Select-Object -First 1
+          if (-not $revision) {
+            # The org container API needs package read access this repository's token may not have. A
+            # key that is unique per run costs one cold restore; reusing a key it cannot invalidate
+            # could silently test an older build of the same version, which is the worse outcome.
+            Write-Warning "Cannot read the OpenAvalon revision of LibreWPF.Sdk $sdk; restoring without a cache hit."
+            $revision = "run-$env:GITHUB_RUN_ID"
+          }
+          # The DevFlow packages are republished at the nuget.org version number for the same reason.
+          $devflow = @(gh api --paginate "/orgs/lextudio/packages/nuget/lextudio.devflow.agent.core/versions?per_page=100" --jq ".[] | select(.name == `"0.3.1`") | .updated_at" 2>$null) |
+            Where-Object { "$_" -match '\S' } | Select-Object -First 1
+          if ($devflow) { $revision = "$revision-$devflow" }
+          "revision=$($revision -replace '[^0-9A-Za-z]', '')" >> $env:GITHUB_OUTPUT
+
       - name: Cache NuGet packages
         uses: actions/cache@v5
         with:
           path: ${{ env.NUGET_PACKAGES }}
-          key: nuget-${{ matrix.name }}-${{ hashFiles('global.json', 'NuGet.config', 'source/**/*.csproj', 'source/**/*.props') }}
+          key: nuget-${{ matrix.name }}-${{ steps.feed.outputs.revision }}-${{ hashFiles('global.json', 'NuGet.config', 'source/**/*.csproj', 'source/**/*.props') }}
 
       - name: Prepare GitHub Packages restore access
         shell: pwsh
