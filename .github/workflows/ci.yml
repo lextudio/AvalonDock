@@ -126,12 +126,19 @@ jobs:
       # the blind spot these tests were changed to stop having - and nothing stacks or positions the
       # floating toplevels the way a real desktop would. LibreWPF's ProGPU backend needs a GL context,
       # which on a runner means Mesa's software rasteriser.
+      # Silk.NET's GLFW build is linked against the whole X11 extension set, Wayland and libdecor, so a
+      # runner missing any of them cannot even dlopen libglfw - which surfaces as Silk's opaque
+      # "Couldn't find a suitable window platform. (GlfwPlatform - not applicable)" instead of a
+      # loader error. Install them explicitly (ProGPU's own CI also installs libxkbcommon and the xcb
+      # set) rather than relying on what the image happens to carry.
       - name: Install headless desktop stack
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb openbox x11-utils x11-xserver-utils \
-            libx11-6 libxtst6 libxrandr2 libxi6 libxcursor1 libxinerama1 \
+            libx11-6 libx11-xcb1 libxext6 libxtst6 libxrandr2 libxrender1 libxxf86vm1 \
+            libxi6 libxcursor1 libxinerama1 \
+            libxkbcommon0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libdecor-0-0 \
             libgl1 libglx-mesa0 libegl1 libgbm1 \
             mesa-vulkan-drivers libvulkan1
 
@@ -149,6 +156,14 @@ jobs:
           DISPLAY=:99 xprop -root _NET_SUPPORTED | grep -q _NET_CLIENT_LIST_STACKING \
             || echo "::warning::EWMH stacking unavailable - z-order assertions will skip"
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          # GLFW probes Wayland before X11 and gets noisy (or picks Wayland) without this; an Xvfb
+          # desktop is X11, and ProGPU's selector honours the override.
+          runtime_dir="$(mktemp -d)"
+          chmod 700 "$runtime_dir"
+          {
+            echo "XDG_RUNTIME_DIR=$runtime_dir"
+            echo "PROGPU_WPF_LINUX_WINDOWING=x11"
+          } >> "$GITHUB_ENV"
 
       # Prebuild in Debug so the fixture can start the app with --no-build and stay inside its
       # 120s startup deadline; `dotnet run` defaults to Debug, so the configurations must match.
@@ -156,6 +171,31 @@ jobs:
         run: |
           dotnet build source/TestApp/TestApp.csproj --configuration Debug
           dotnet build source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj --configuration Debug
+
+      # A RID-less build keeps the native runtime assets under runtimes/<rid>/native instead of next
+      # to TestApp.dll, and both Silk (libglfw) and ProGPU's driver (libprogpu_native -> libwgpu_native)
+      # load them by bare name. Put that folder on the loader path - eng/progpu-wpf-linux-*.sh publish
+      # with a RID for the same reason - and fail here, with the actual missing library, instead of
+      # letting GLFW report that no window platform is available.
+      - name: Expose the Linux native libraries
+        run: |
+          native_dir=source/TestApp/bin/Debug/net10.0-windows/runtimes/linux-x64/native
+          if [ ! -d "$native_dir" ]; then
+            echo "::error::$native_dir does not exist; the LibreWPF native staging changed."
+            exit 1
+          fi
+          status=0
+          for lib in "$native_dir"/*.so*; do
+            missing="$(ldd "$lib" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+            if [ -n "$missing" ]; then
+              echo "::error::$(basename "$lib") is missing $missing"
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/$native_dir" >> "$GITHUB_ENV"
 
       # NuGet source mapping already makes GitHub Packages the only candidate for these prefixes
       # (the most specific pattern wins over nuget.org's `*`), but a package already present in the
