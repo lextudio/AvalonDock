@@ -42,8 +42,8 @@
 
   <ItemGroup>
     <!-- The DevFlow agent comes from nuget.org. -->
-    <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.1" />
-    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
+    <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.2-ci-linux-input-github-packages.1" />
+    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.2-ci-linux-input-github-packages.1" />
   </ItemGroup>
 
   <ItemGroup>
