@@ -267,6 +267,9 @@ namespace AvalonDock.Controls
 
 			AddLogicalChild(_internalHostPresenter);
 			Win32Helper.BringWindowToTop(_internalHwndSource.Handle);
+#if LIBREWPF
+			System.Console.Error.WriteLine($"[HWND-TRACE] autohide returning handle=0x{_internalHwndSource.Handle.ToInt64():X} parentNow=0x{Win32Helper.GetParent(_internalHwndSource.Handle).ToInt64():X} visible={Win32Helper.IsWindowVisible(_internalHwndSource.Handle)} sourceDisposed={_internalHwndSource.IsDisposed}");
+#endif
 			return new HandleRef(this, _internalHwndSource.Handle);
 		}
 
