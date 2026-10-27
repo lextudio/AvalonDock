@@ -1265,13 +1265,22 @@ namespace AvalonDock.Controls
 			if (Interlocked.Exchange(ref _portableDragPumpTickQueued, 1) != 0)
 				return;
 
-			Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+			try
 			{
+				Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+				{
+					Interlocked.Exchange(ref _portableDragPumpTickQueued, 0);
+					if (!_portableDragging)
+						return;
+					OnPortableNativeDragTick(this, EventArgs.Empty);
+				}));
+			}
+			catch (InvalidOperationException)
+			{
+				// The dispatcher is shutting down (the window is being torn down between ticks).
 				Interlocked.Exchange(ref _portableDragPumpTickQueued, 0);
-				if (!_portableDragging)
-					return;
-				OnPortableNativeDragTick(this, EventArgs.Empty);
-			}));
+				StopPortableDragPump();
+			}
 		}
 
 		private void OnPortableNativeLocationChanged(object sender, EventArgs e)
