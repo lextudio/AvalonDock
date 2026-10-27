@@ -140,7 +140,8 @@ jobs:
             libxi6 libxcursor1 libxinerama1 \
             libxkbcommon0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libdecor-0-0 \
             libgl1 libglx-mesa0 libegl1 libgbm1 \
-            mesa-vulkan-drivers libvulkan1
+            mesa-vulkan-drivers libvulkan1 \
+            libc++1 libc++abi1 libunwind8
 
       - name: Start X server and window manager
         run: |
