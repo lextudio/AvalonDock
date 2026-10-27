@@ -138,7 +138,24 @@ namespace TestApp
 
 			this.DataContext = this;
 
-			winFormsHost.Child = new UserControl1();
+			if (OperatingSystem.IsWindows())
+			{
+				winFormsHost.Child = new UserControl1();
+			}
+			else
+			{
+				// WindowsFormsHost is an HwndHost: it hosts the WinForms control in a native child
+				// window, and a portable backend (LibreWPF) has none to give it - asking for one aborts
+				// the process with "BuildWindowCore failed to return the hosted child window handle".
+				// The pane stays so window/docking scenarios keep their layout, but the interop content
+				// is replaced with a note instead of a host that cannot work here.
+				WinFormsWindow.Content = new TextBlock
+				{
+					Text = "Windows Forms interop is only available on Windows.",
+					Margin = new Thickness(8),
+					TextWrapping = TextWrapping.Wrap,
+				};
+			}
 
 			UpdateThemeColors();
 
