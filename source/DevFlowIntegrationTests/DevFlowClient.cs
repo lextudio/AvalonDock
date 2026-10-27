@@ -1,4 +1,5 @@
 using System;
+using Xunit;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -264,12 +265,25 @@ namespace AvalonDock.DevFlowIntegrationTests
 			return attemptedLeaseId;
 		}
 
+		/// <summary>
+		/// A 501 means the agent build has no implementation of that pointer primitive at all (the WPF
+		/// agent has none for drag on some Windows configurations). That is a platform limitation, not a
+		/// product regression, and it is reported as a skip so it neither fails the run nor spends the
+		/// readiness deadlines of every row that needs the primitive.
+		/// </summary>
+		private static void SkipIfAgentLacksInput(HttpStatusCode status, string label, string raw)
+		{
+			if (status == HttpStatusCode.NotImplemented)
+				Assert.Skip($"The DevFlow agent does not implement '{label}' on this platform: {raw}");
+		}
+
 		public async Task<JsonElement> DragAsync(DragRequest request, CancellationToken ct = default)
 		{
 			var body = JsonSerializer.Serialize(request);
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
 			using var resp = await SendMutationAsync(HttpMethod.Post, "/api/v1/ui/actions/drag", content, ct).ConfigureAwait(false);
 			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+			SkipIfAgentLacksInput(resp.StatusCode, "drag", raw);
 			if (!resp.IsSuccessStatusCode)
 				throw new HttpRequestException($"DevFlow drag returned {(int)resp.StatusCode}: {raw}");
 			return JsonDocument.Parse(raw).RootElement.Clone();
@@ -306,6 +320,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
 			using var resp = await SendMutationAsync(HttpMethod.Post, path, content, ct).ConfigureAwait(false);
 			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+			SkipIfAgentLacksInput(resp.StatusCode, label, raw);
 			if (!resp.IsSuccessStatusCode)
 				throw new HttpRequestException($"DevFlow {label} returned {(int)resp.StatusCode}: {raw}");
 			using var doc = JsonDocument.Parse(raw);

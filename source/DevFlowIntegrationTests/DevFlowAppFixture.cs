@@ -156,12 +156,24 @@ public class DevFlowAppFixture : IAsyncLifetime
             }
         }
 
+        // `dotnet run --no-build` still evaluates the whole project (SDK resolution, LibreWPF.Sdk
+        // targets, restore assets) before it starts anything. With one restart per test that is ~10 s
+        // each on a windows-11-arm runner - 27 minutes for 80 tests - so a prebuilt app is started
+        // directly from its output folder.
+        var appDll = noBuild
+            ? Path.Combine(testAppDir, "bin", "Debug", "net10.0-windows", _projectName + ".dll")
+            : null;
+        var startDirect = appDll != null && File.Exists(appDll);
+
         _process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = dotnetPath,
-                Arguments = $"run {(noBuild ? "--no-build " : string.Empty)}--project \"{testAppDir}\"",
+                Arguments = startDirect
+                    ? $"\"{appDll}\""
+                    : $"run {(noBuild ? "--no-build " : string.Empty)}--project \"{testAppDir}\"",
+                WorkingDirectory = startDirect ? Path.GetDirectoryName(appDll)! : testAppDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
