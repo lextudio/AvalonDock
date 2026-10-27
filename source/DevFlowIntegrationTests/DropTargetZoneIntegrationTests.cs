@@ -67,6 +67,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 			// process so one theory row cannot corrupt the screen coordinates of a later row.
 			await RestartTestAppAsync();
 			NativeInputEnvironment.EnsureNativeDragAvailable();
+			// These cases hold a drag across several calls (cliclick on macOS, XTest on Linux); real WPF
+			// on Windows has no such primitive, which used to surface as an empty process file name.
+			NativeInputEnvironment.EnsureDecomposedInputAvailable();
 			await IsolateDesktopForNativeInputAsync();
 
 			using var client = await TryConnectAsync();
@@ -449,6 +452,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			await RestartTestAppAsync();
 			NativeInputEnvironment.EnsureNativeDragAvailable();
+			// These cases hold a drag across several calls (cliclick on macOS, XTest on Linux); real WPF
+			// on Windows has no such primitive, which used to surface as an empty process file name.
+			NativeInputEnvironment.EnsureDecomposedInputAvailable();
 			await IsolateDesktopForNativeInputAsync();
 
 			using var client = await TryConnectAsync();

@@ -1172,6 +1172,9 @@ namespace TestApp
 				["anchorables"] = anchorables,
 				["documents"] = documents,
 				["floatingWindows"] = floatingWindows,
+				// "Window" mode: anchorables hosted by a standalone top-level window, which is not a
+				// floating window and is not part of the layout's floating-window list.
+				["detachedContentIds"] = dockManager.DetachedAnchorables.Select(a => a.ContentId).ToArray(),
 				["activeContent"] = dockManager.ActiveContent?.ToString(),
 				["activeContentId"] = dockManager.Layout.ActiveContent?.ContentId,
 			};
@@ -1771,7 +1774,14 @@ namespace TestApp
 			}
 
 			if (Keyboard.FocusedElement is UIElement focused)
-				focused.RaiseEvent(new RoutedEventArgs(Keyboard.LostKeyboardFocusEvent, focused));
+				focused.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, Environment.TickCount, focused, null)
+				{
+					// The routed event's handler type is KeyboardFocusChangedEventHandler, so plain
+					// RoutedEventArgs cannot be delivered on WPF ("cannot be converted to type
+					// KeyboardFocusChangedEventArgs").
+					RoutedEvent = Keyboard.LostKeyboardFocusEvent,
+					Source = focused,
+				});
 
 			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
 			{
@@ -1992,9 +2002,35 @@ namespace TestApp
 		{
 			var floating = FindVisibleFloatingWindow(contentId);
 			if (floating == null)
-				throw new InvalidOperationException($"No floating window found for '{contentId}'.");
+			{
+				// A standalone "Window" mode window: closing it returns the anchorable to the layout.
+				var detached = dockManager.DetachedAnchorables
+					.FirstOrDefault(a => string.Equals(a.ContentId, contentId, StringComparison.Ordinal));
+				if (detached == null)
+					throw new InvalidOperationException($"No floating window found for '{contentId}'.");
 
-			floating.Close();
+				dockManager.ReattachAnchorable(detached);
+				Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+				return QueryLayout();
+			}
+
+			// What a window manager's close ends in: Alt+F4, the title-bar close and the system menu
+			// reach LayoutAnchorableFloatingWindowControl as WM_CLOSE, which runs the hide command
+			// (issue #368). Window.Close() alone skips that and only hides the native window, so the
+			// model keeps its floating window. Done through the command so it behaves the same where
+			// there is no Win32 message to post.
+			if (floating is LayoutAnchorableFloatingWindowControl anchorableWindow)
+			{
+				if (anchorableWindow.HideWindowCommand.CanExecute(null))
+					anchorableWindow.HideWindowCommand.Execute(null);
+				else
+					floating.Close();
+			}
+			else
+			{
+				floating.Close();
+			}
+
 			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
 			return QueryLayout();
 		}

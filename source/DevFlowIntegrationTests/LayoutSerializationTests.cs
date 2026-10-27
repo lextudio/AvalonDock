@@ -179,8 +179,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 		}
 
 		private static bool IsDetached(JsonElement layout, string contentId)
-			=> ReadArray(layout, "floatingWindows")
-				.Any(f => ReadArray(f, "contentIds").Any(id => string.Equals(id.GetString(), contentId, StringComparison.Ordinal)));
+			=> ReadArray(layout, "detachedContentIds")
+				.Any(id => string.Equals(id.GetString(), contentId, StringComparison.Ordinal));
 
 		private static async Task SaveLayoutAsync(DevFlowClient client, string slot, bool settle = true)
 		{
