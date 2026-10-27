@@ -14,15 +14,8 @@ env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # OpenAvalon grants this repository's Actions GITHUB_TOKEN read access to its packages.
   NuGetPackageSourceCredentials_openavalon-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
-  # Temporary: only the Linux DevFlow leg is being driven right now. The Windows unit/FlaUI suites say
-  # nothing about the LibreWPF/ProGPU backend the Linux work is about and add most of a Windows job's
-  # runtime to every iteration, so their steps are parked here; the job still builds, so a Windows-only
-  # compile break is still caught. Set to '1' to restore all-platform coverage.
-  RUN_NON_LINUX_TESTS: '0'
 
 jobs:
-  # Windows compile check. Its unit and FlaUI suites are gated behind RUN_NON_LINUX_TESTS (currently
-  # off) while the Linux DevFlow leg is brought to green; see the env block above.
   build:
     name: Build & Test
     runs-on: windows-latest
@@ -67,7 +60,6 @@ jobs:
         run: dotnet build source/AvalonDock.sln --configuration Release --no-restore
 
       - name: Test (Unit Tests)
-        if: env.RUN_NON_LINUX_TESTS == '1'
         run: >
           dotnet test source/AvalonDock.sln
           --configuration Release
@@ -78,7 +70,6 @@ jobs:
           -m:1
 
       - name: Test (FlaUI UI Tests)
-        if: env.RUN_NON_LINUX_TESTS == '1'
         run: >
           dotnet test source/AvalonDock.sln
           --configuration Release
