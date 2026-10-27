@@ -256,6 +256,8 @@ jobs:
           DEVFLOW_TESTAPP_NO_BUILD: '1'
           TEST_ARGS: ${{ inputs.test_args }}
           DEVFLOW_RUN_KNOWN_GAPS: ${{ inputs.run_known_gaps && '1' || '' }}
+          # LibreWPF's own GPU hit-test trace (owners found at each hit point), for gap investigations.
+          PROGPU_WPF_TRACE_HIT_TEST: ${{ inputs.run_known_gaps && '1' || '' }}
           # ProGPU renders through wgpu over GLFW, so the windowing environment has to look like a
           # real X11 desktop with software rendering. These are the settings LibreWPF's own
           # eng/progpu-wpf-linux-multi-window-smoke.sh uses - that harness opens several top-level
