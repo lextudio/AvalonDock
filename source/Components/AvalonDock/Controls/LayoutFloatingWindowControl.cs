@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
@@ -54,7 +55,7 @@ namespace AvalonDock.Controls
 		internal static string PortableDragLastRequest { get; private set; }
 		internal bool PortableNativeDraggingForDiagnostics => _portableNativeDragging;
 		internal bool PortableDraggingForDiagnostics => _portableDragging;
-		internal bool PortableDragTimerEnabledForDiagnostics => _portableNativeDragTimer?.IsEnabled ?? false;
+		internal bool PortableDragTimerEnabledForDiagnostics => _portableDragPumpRunning;
 
 		// Temporary diagnostics for the Linux drag investigation: the TestApp log is truncated every
 		// time the fixture restarts the app, which is exactly when the drag-start decisions matter, so
@@ -1200,7 +1201,9 @@ namespace AvalonDock.Controls
 		// and the release drops onto the current target - the same DragService the WM_MOVING path uses.
 		private bool _portableDragging;
 		private bool _portableNativeDragging;
-		private DispatcherTimer _portableNativeDragTimer;
+		private System.Threading.Timer _portableDragPump;
+		private int _portableDragPumpTickQueued;
+		private volatile bool _portableDragPumpRunning;
 		private Point _portableDragOffset;   // pointer-to-window-origin offset, in screen coords
 		private Point _portableLastPointer;  // last pointer screen position seen during the drag
 		private DateTime _portableDragStartUtc;
@@ -1224,6 +1227,52 @@ namespace AvalonDock.Controls
 		// The Win32 caption-drag path (WM_NCLBUTTONDOWN + WM_MOVING/WM_EXITSIZEMOVE) only works on real
 		// Windows HWNDs. Everywhere else (LibreWPF on macOS/Linux) use the managed caption drag.
 		internal static bool UsePortableCaptionDrag { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+		/// <summary>
+		/// Starts the portable drag's position pump.
+		/// </summary>
+		/// <remarks>
+		/// A <see cref="DispatcherTimer"/> cannot be used here. Its ticks are driven by the dispatcher's
+		/// window timer, which WindowsBase arms with SetTimer on the dispatcher window's handle; a
+		/// chromeless floating window on the LibreWPF Linux backend has no handle, so the timer reports
+		/// IsEnabled=true, is armed on nothing, and never fires - the drag then never moves the window.
+		/// A thread timer that posts one dispatcher item at a time has no such dependency. Only a single
+		/// tick is kept in flight, so a busy UI thread coalesces them instead of queueing a backlog.
+		/// </remarks>
+		private void StartPortableDragPump()
+		{
+			_portableDragPump ??= new System.Threading.Timer(
+				OnPortableDragPumpElapsed,
+				null,
+				System.Threading.Timeout.Infinite,
+				System.Threading.Timeout.Infinite);
+			_portableDragPumpRunning = true;
+			_portableDragPump.Change(TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(16));
+		}
+
+		private void StopPortableDragPump()
+		{
+			_portableDragPumpRunning = false;
+			_portableDragPump?.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+		}
+
+		private void OnPortableDragPumpElapsed(object state)
+		{
+			if (!_portableDragPumpRunning)
+				return;
+
+			// The timer callback runs on a pool thread; the drag itself must stay on the UI thread.
+			if (Interlocked.Exchange(ref _portableDragPumpTickQueued, 1) != 0)
+				return;
+
+			Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+			{
+				Interlocked.Exchange(ref _portableDragPumpTickQueued, 0);
+				if (!_portableDragging)
+					return;
+				OnPortableNativeDragTick(this, EventArgs.Empty);
+			}));
+		}
 
 		private void OnPortableNativeLocationChanged(object sender, EventArgs e)
 		{
@@ -1260,12 +1309,7 @@ namespace AvalonDock.Controls
 			_dragService = dragService;
 			dragService.UpdateMouseLocation(_portableLastPointer);
 
-			_portableNativeDragTimer ??= new DispatcherTimer(
-				TimeSpan.FromMilliseconds(16),
-				DispatcherPriority.Input,
-				OnPortableNativeDragTick,
-				Dispatcher);
-			_portableNativeDragTimer.Start();
+			StartPortableDragPump();
 		}
 
 		private void OnPortableNativeDragTick(object sender, EventArgs e)
@@ -1441,12 +1485,7 @@ namespace AvalonDock.Controls
 			if (_dragService == null)
 				_dragService = new DragService(this);
 			SetIsDragging(true);
-			_portableNativeDragTimer ??= new DispatcherTimer(
-				TimeSpan.FromMilliseconds(16),
-				DispatcherPriority.Input,
-				OnPortableNativeDragTick,
-				Dispatcher);
-			_portableNativeDragTimer.Start();
+			StartPortableDragPump();
 			TracePortableDrag(string.Format(
 				CultureInfo.InvariantCulture,
 				"start: ptr={0:F0},{1:F0} origin={2:F0},{3:F0} offset={4:F0},{5:F0} timerEnabled={6}",
@@ -1456,7 +1495,7 @@ namespace AvalonDock.Controls
 				nativeOrigin.Y,
 				_portableDragOffset.X,
 				_portableDragOffset.Y,
-				_portableNativeDragTimer.IsEnabled));
+				_portableDragPumpRunning));
 			CaptureMouse();
 			e.Handled = true;
 		}
@@ -1549,7 +1588,7 @@ namespace AvalonDock.Controls
 			TracePortableDrag("end(" + reason + "): drop=" + drop);
 			_portableDragging = false;
 			_portableNativeDragging = false;
-			_portableNativeDragTimer?.Stop();
+			StopPortableDragPump();
 			if (IsMouseCaptured) ReleaseMouseCapture();
 
 			var dropHandled = false;
@@ -1572,7 +1611,9 @@ namespace AvalonDock.Controls
 			if (!UsePortableCaptionDrag)
 				return;
 
-			_portableNativeDragTimer?.Stop();
+			StopPortableDragPump();
+			_portableDragPump?.Dispose();
+			_portableDragPump = null;
 			LocationChanged -= OnPortableNativeLocationChanged;
 			InputManager.Current.PostProcessInput -= OnPortablePostProcessInput;
 
