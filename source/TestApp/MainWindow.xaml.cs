@@ -390,6 +390,23 @@ namespace TestApp
 				{
 					if ((anchorCtl.Model as LayoutContent)?.Title != "AutoHide1 Content") continue;
 					var center = new Point(anchorCtl.ActualWidth / 2, anchorCtl.ActualHeight / 2);
+					void DumpSub(DependencyObject d, int depth)
+					{
+						if (d is Visual dv)
+						{
+							var ue2 = d as UIElement; var fe2 = d as FrameworkElement;
+							var cb = VisualTreeHelper.GetContentBounds(dv);
+							var dc = VisualTreeHelper.GetDescendantBounds(dv);
+							var mid = fe2 != null ? new Point(fe2.ActualWidth / 2, fe2.ActualHeight / 2) : new Point();
+							var hh = VisualTreeHelper.HitTest(dv, mid)?.VisualHit;
+							var bg = (d as System.Windows.Controls.Border)?.Background?.ToString() ?? (d as System.Windows.Controls.Control)?.Background?.ToString();
+							var txt = (d as System.Windows.Controls.TextBlock)?.Text;
+							Console.Error.WriteLine($"[GAP-SUB] {new string(' ', depth * 2)}{d.GetType().Name} vis={ue2?.Visibility} isVis={ue2?.IsVisible} size={fe2?.ActualWidth}x{fe2?.ActualHeight} opacity={ue2?.Opacity} bg={bg} text={txt} content={cb} desc={dc} hitMid={hh?.GetType().Name ?? "null"}");
+						}
+						for (int i = 0; i < VisualTreeHelper.GetChildrenCount(d) && depth < 8; i++)
+							DumpSub(VisualTreeHelper.GetChild(d, i), depth + 1);
+					}
+					DumpSub(anchorCtl, 0);
 					for (DependencyObject anc = anchorCtl; anc != null; anc = VisualTreeHelper.GetParent(anc))
 					{
 						if (anc is not Visual av) continue;
