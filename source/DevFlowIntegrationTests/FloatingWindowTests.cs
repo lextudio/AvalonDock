@@ -97,7 +97,32 @@ namespace AvalonDock.DevFlowIntegrationTests
 			using var client = await TryConnectAsync();
 
 			await CreateFloatingWindowAsync(client);
-			var bounds = await client.QueryBoundsAsync("floating-window");
+
+			// The window is reported as soon as it is in the layout, which is before its first
+			// measure pass has sized it, so give the layout a moment before judging the size.
+			ElementBounds bounds = default;
+			string lastError = null;
+			var settle = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+			do
+			{
+				try
+				{
+					bounds = await client.QueryBoundsAsync("floating-window");
+					lastError = null;
+					if (bounds.Width >= 300 && bounds.Height >= 300)
+						break;
+				}
+				catch (InvalidOperationException ex)
+				{
+					// An unsized window reports empty bounds, which the client rejects.
+					lastError = ex.Message;
+				}
+
+				await Task.Delay(250, TestContext.Current.CancellationToken);
+			}
+			while (DateTime.UtcNow < settle);
+
+			Assert.True(lastError == null, $"The floating window never reported usable bounds: {lastError}");
 
 			// The FlaUI case accepted anything larger than 50x50. The content declares MinWidth and
 			// MinHeight of 300 and AutoWindowSizeWhenOpened is on, so a smaller window means #174 is

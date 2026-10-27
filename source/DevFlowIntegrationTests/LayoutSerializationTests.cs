@@ -152,7 +152,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 			await WaitUntilAsync(
 				async () => IsDetached(await QueryLayoutAsync(client), "toolWindow1"),
 				TimeSpan.FromSeconds(20),
-				"'Window' on 'Tool Window 1' did not detach it into a standalone window.");
+				"'Window' on 'Tool Window 1' did not detach it into a standalone window.",
+				async () => $"dialogs={await client.InvokeAsync("avd.dialogs.query")} layout={await client.InvokeAsync("avd.query.layout")}");
 
 			await SaveLayoutAsync(client, "Layout_1", settle: false);
 

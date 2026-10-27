@@ -103,7 +103,39 @@ namespace AvalonDock.DevFlowIntegrationTests
 		protected static async Task ClickTabAsync(DevFlowClient client, string kind, string contentId)
 		{
 			var bounds = await client.QueryBoundsAsync(kind, contentId);
+
+			// What the click will land on, so a click that "did nothing" can be told from one that hit
+			// something else; written to stderr, which the CI log keeps for every platform.
+			try
+			{
+				var hit = await client.InvokeAsync("avd.hit-test", bounds.CenterX, bounds.CenterY);
+				Console.Error.WriteLine($"[click] {kind}/{contentId} bounds=({bounds.X},{bounds.Y},{bounds.Width}x{bounds.Height}) centre=({bounds.CenterX},{bounds.CenterY}) hit={hit}");
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine($"[click] {kind}/{contentId} hit-test failed: {ex.Message}");
+			}
+
 			await client.ClickAsync(bounds.CenterX, bounds.CenterY);
+		}
+
+		/// <summary>
+		/// <see cref="WaitUntilAsync"/> that appends the application's own account of the state when the
+		/// wait times out, so a failure on a runner nobody can attach to says what the app was doing.
+		/// </summary>
+		protected static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, string message, Func<Task<string>> describeState)
+		{
+			try
+			{
+				await WaitUntilAsync(condition, timeout, message);
+			}
+			catch (Xunit.Sdk.XunitException ex)
+			{
+				string state;
+				try { state = await describeState(); }
+				catch (Exception stateError) { state = $"(state unavailable: {stateError.Message})"; }
+				throw new Xunit.Sdk.XunitException($"{ex.Message} State: {state}");
+			}
 		}
 
 		protected static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, string message)

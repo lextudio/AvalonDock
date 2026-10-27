@@ -56,7 +56,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 			await WaitUntilAsync(
 				async () => ReadArray(await QueryLayoutAsync(client), "floatingWindows").Count() == 0,
 				TimeSpan.FromSeconds(5),
-				"The floating window survived its own close.");
+				"The floating window survived its own close.",
+				async () => $"dialogs={await client.InvokeAsync("avd.dialogs.query")} layout={await client.InvokeAsync("avd.query.layout")}");
 
 			var layout = await QueryLayoutAsync(client);
 			var anchorable = FindContent(layout, "anchorables", "Tool Window 1");

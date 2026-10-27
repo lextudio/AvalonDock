@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Xunit;
@@ -40,8 +41,25 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 			// While unloaded the docking manager is not part of the visual tree at all, which is the
 			// behaviour the FlaUI comment describes but never checked.
-			var unloaded = await client.QueryBoundsAsync("manager");
-			Assert.True(unloaded.Width <= 0 && unloaded.Height <= 0, $"The manager is still in the visual tree while unloaded. Bounds={unloaded}");
+			// A manager that is out of the tree cannot be converted to screen coordinates at all, which
+			// the bounds query reports as an error rather than as an empty rectangle.
+			var inTree = true;
+			try
+			{
+				var unloaded = await client.QueryBoundsAsync("manager");
+				inTree = unloaded.Width > 0 || unloaded.Height > 0;
+			}
+			catch (HttpRequestException ex) when (ex.Message.Contains("Could not convert element point", StringComparison.Ordinal))
+			{
+				inTree = false;
+			}
+			catch (InvalidOperationException)
+			{
+				// Reported as empty (or not found) bounds, which the client rejects.
+				inTree = false;
+			}
+
+			Assert.False(inTree, "The manager is still in the visual tree while unloaded.");
 			await AssertAppAliveAsync(client);
 
 			await client.InvokeAsync("avd.menu.invoke", "Layout/Load Manager");

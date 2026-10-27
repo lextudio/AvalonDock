@@ -1411,7 +1411,7 @@ namespace TestApp
 				floating.Activate();
 				floating.Focus();
 				Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
-				return "Activated floating window";
+				return System.Text.Json.JsonSerializer.Serialize("Activated floating window");
 			}
 
 			public string PositionMainWindow(double left = 50, double top = 40)
