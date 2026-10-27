@@ -2004,7 +2004,7 @@ namespace TestApp
 		{
 			var button = FindDocumentContentElement<Button>("document1", b => string.Equals(b.Content?.ToString(), "Click to add 2 documents", StringComparison.Ordinal));
 			if (button == null)
-				return "The add-documents button was not found in Document 1.";
+				return System.Text.Json.JsonSerializer.Serialize("The add-documents button was not found in Document 1.");
 
 			button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
 			return QueryLayout();
@@ -2896,8 +2896,17 @@ namespace TestApp
 			else
 #endif
 			{
-				topLeft = PointToScreenPortable(element, new Point(0, 0));
-				bottomRight = PointToScreenPortable(element, new Point(element.ActualWidth, element.ActualHeight));
+				// All four corners: the side auto-hide tabs sit under a 90 degree LayoutTransform, so the
+				// (0,0)-(w,h) diagonal alone yields a negative width or height there.
+				var corners = new[]
+				{
+					PointToScreenPortable(element, new Point(0, 0)),
+					PointToScreenPortable(element, new Point(element.ActualWidth, 0)),
+					PointToScreenPortable(element, new Point(0, element.ActualHeight)),
+					PointToScreenPortable(element, new Point(element.ActualWidth, element.ActualHeight)),
+				};
+				topLeft = new Point(corners.Min(c => c.X), corners.Min(c => c.Y));
+				bottomRight = new Point(corners.Max(c => c.X), corners.Max(c => c.Y));
 			}
 			result["x"] = topLeft.X;
 			result["y"] = topLeft.Y;
@@ -3300,12 +3309,12 @@ namespace TestApp
 					string.Equals(c.ContentId, contentIdOrTitle, StringComparison.Ordinal)
 					|| string.Equals(c.Title, contentIdOrTitle, StringComparison.Ordinal));
 			if (content == null)
-				return $"Content '{contentIdOrTitle}' not found";
+				return System.Text.Json.JsonSerializer.Serialize($"Content '{contentIdOrTitle}' not found");
 
 			// CanClose is the sample's own contract (WinForms Window is CanClose=False), so a close
 			// attempt on it must report that instead of removing it.
 			if (!content.CanClose)
-				return $"'{content.Title}' cannot be closed (CanClose=false)";
+				return System.Text.Json.JsonSerializer.Serialize($"'{content.Title}' cannot be closed (CanClose=false)");
 
 			switch (content)
 			{
