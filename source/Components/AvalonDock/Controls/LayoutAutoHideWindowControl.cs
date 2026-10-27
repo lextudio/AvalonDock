@@ -144,7 +144,7 @@ namespace AvalonDock.Controls
 		/// render at all.
 		/// </para>
 		/// </summary>
-		private static bool HostsContentAsVisualChild { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+		private static bool HostsContentAsVisualChild { get; } = AvalonDock.Platform.PlatformHelper.UsesPortableBackend;
 
 		private bool _presenterIsVisualChild;
 

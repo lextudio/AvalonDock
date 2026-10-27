@@ -11,6 +11,18 @@ namespace AvalonDock.Platform
 	/// </summary>
 	internal static class PlatformHelper
 	{
+		/// <summary>
+		/// Gets a value indicating whether windows are hosted by the portable backend (LibreWPF), where a
+		/// Win32 child window or the Win32 modal caption drag is not available, on any operating system
+		/// including Windows. The WPF build only gets there off Windows, which it never runs on.
+		/// </summary>
+		internal static bool UsesPortableBackend { get; } =
+#if LIBREWPF
+			true;
+#else
+			!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+#endif
+
 		private sealed class NativeWindowHandle
 		{
 			internal NativeWindowHandle(IntPtr value) => Value = value;

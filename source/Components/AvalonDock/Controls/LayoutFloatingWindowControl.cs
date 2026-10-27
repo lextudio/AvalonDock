@@ -1202,7 +1202,7 @@ namespace AvalonDock.Controls
 		// Windows HWNDs. Everywhere else (LibreWPF on macOS/Linux) use the managed caption drag.
 
 		/// <summary>Gets a value indicating whether the managed caption drag replaces the Win32 one.</summary>
-		internal static bool UsePortableCaptionDrag { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+		internal static bool UsePortableCaptionDrag { get; } = AvalonDock.Platform.PlatformHelper.UsesPortableBackend;
 
 		/// <summary>
 		/// Starts the portable drag's position pump.
@@ -1647,11 +1647,11 @@ namespace AvalonDock.Controls
 			/// A Win32 child window does not compose into a portable (LibreWPF) presentation source, so
 			/// the content hosted in <see cref="_wpfContentHost"/> would render nothing at all - and
 			/// asking the backend for that child window fails outright. Same reasoning and the same
-			/// switch as <see cref="LayoutAutoHideWindowControl"/>. Deliberately not applied on Windows,
+			/// switch as <see cref="LayoutAutoHideWindowControl"/>. Deliberately not applied on real WPF,
 			/// where the child window is the airspace workaround that keeps WPF content from being
 			/// painted over native content.
 			/// </remarks>
-			private static bool HostsContentAsVisualChild { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+			private static bool HostsContentAsVisualChild { get; } = PlatformHelper.UsesPortableBackend;
 
 #if LIBREWPF
 			/// <summary>
