@@ -45,7 +45,7 @@ jobs:
         env:
           LEGS: ${{ inputs.legs }}
         run: |
-          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025"},{"name":"windows-arm64","runner":"windows-11-arm"}]'
+          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025","experimental":true},{"name":"windows-arm64","runner":"windows-11-arm","experimental":true}]'
           legs="$(echo "$LEGS" | tr -d '[:space:]')"
           if [ -z "$legs" ] || [ "$legs" = all ]; then
             matrix="$all"
@@ -72,6 +72,10 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
+    # LibreWPF on Windows cannot host AvalonDock's HwndHost content yet (LibreWPF only takes its visual
+    # hosting path for portable presentation sources; on Windows the parent is a real HwndSource), so
+    # those legs are reported but do not fail the run. docs/librewpf.md, section 11.9.
+    continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 90
 
     steps:
@@ -218,7 +222,9 @@ jobs:
       # global packages folder is never looked up again. nuget.org publishes the same
       # 0.1.0-preview.69 version with different bits (it still carries osx-x64 and lacks the
       # OpenAvalon native staging), so a stale cache entry would silently test the wrong LibreWPF.
-      # Assert the recorded source instead of assuming it.
+      # Assert the recorded source instead of assuming it. The DevFlow packages are held to the same rule:
+      # their GitHub Packages build reuses the nuget.org version number on purpose, so a cached nuget.org
+      # copy would silently be the wrong bits.
       - name: Verify the LibreWPF closure came from OpenAvalon
         shell: bash
         run: |
@@ -227,7 +233,8 @@ jobs:
           status=0
           for meta in $NUGET_PACKAGES/librewpf.*/*/.nupkg.metadata \
                       $NUGET_PACKAGES/librewinforms.*/*/.nupkg.metadata \
-                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata; do
+                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/lextudio.devflow.*/*/.nupkg.metadata; do
             [ -f "$meta" ] || continue
             # Published on nuget.org on purpose (see NuGet.config).
             case "$meta" in */progpu.scene.native/*) continue ;; esac

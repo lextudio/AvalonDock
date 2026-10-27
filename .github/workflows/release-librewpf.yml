@@ -34,11 +34,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # LibreWPF on Windows: the same closure as on the other legs, tested by the DevFlow suite.
+          # LibreWPF on Windows: the same closure is built, but the DevFlow suite does not gate the
+          # release yet (LibreWPF cannot host HwndHost content on Windows; docs/librewpf.md, 11.9).
           # The NUnit and FlaUI suites run on real WPF in the WPF line's own workflow (ci.yml).
           - name: windows-x64
             runner: windows-2025
-            devflow: true
+            devflow: false
           # This is the leg whose packages are published, so it runs the DevFlow suite too: a package
           # that cannot dock a pane on macOS must not ship.
           - name: macos-arm64
@@ -213,7 +214,8 @@ jobs:
           status=0
           for meta in $NUGET_PACKAGES/librewpf.*/*/.nupkg.metadata \
                       $NUGET_PACKAGES/librewinforms.*/*/.nupkg.metadata \
-                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata; do
+                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/lextudio.devflow.*/*/.nupkg.metadata; do
             [ -f "$meta" ] || continue
             # Published on nuget.org on purpose (see NuGet.config).
             case "$meta" in */progpu.scene.native/*) continue ;; esac

@@ -23,7 +23,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Only for the CliclickSharp helper its build targets copy next to the tests (macOS and Windows
          pointer injection for the held-drag cases); the suite itself still talks plain HTTP. -->
-    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.2-ci-linux-input-github-packages.1" />
+    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
   </ItemGroup>
 
 </Project>
