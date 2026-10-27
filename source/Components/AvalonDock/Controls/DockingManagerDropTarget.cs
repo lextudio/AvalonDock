@@ -234,10 +234,12 @@ namespace AvalonDock.Controls
 			}
 
 			// Preferred dock size used by the outer-edge rules: width for Left/Right, height for Top/Bottom.
-			// The rendered actual size is preferred, but on backends where a Star pane is not yet laid
-			// out (LibreWPF collapses it to its minimum while a floating window is being dragged) it is
-			// unusable, so fall back to the floating window's size kept on the model - otherwise the
-			// preview box collapses to a sliver that never matches the pane after the drop.
+			// This has to predict what LayoutPanelControl will assign when the pane is docked, not just
+			// what the pane measures while floating: for a Star dock size that panel freezes the child to
+			// the floating window's size kept on the model (FloatingWidth/FloatingHeight), which includes
+			// the floating window's chrome and is therefore larger than the pane's own rendered size.
+			// Mirroring that rule here is what keeps the preview rectangle on top of the resulting pane
+			// (Linux reported 260 for the preview and 270 for the docked pane for exactly this reason).
 			var forVertical = Type == DropTargetType.DockingManagerDockTop || Type == DropTargetType.DockingManagerDockBottom;
 			var dockSize = forVertical ? layoutAnchorablePane.DockHeight : layoutAnchorablePane.DockWidth;
 			var actualSize = forVertical ? layoutAnchorablePaneWithActualSize.ActualHeight : layoutAnchorablePaneWithActualSize.ActualWidth;
@@ -245,7 +247,7 @@ namespace AvalonDock.Controls
 			var floatingSize = forVertical ? layoutAnchorablePaneWithActualSize.FloatingHeight : layoutAnchorablePaneWithActualSize.FloatingWidth;
 			var preferredSize = dockSize.IsAbsolute
 				? dockSize.Value
-				: (actualSize > minSize ? actualSize : floatingSize);
+				: (floatingSize > minSize ? floatingSize : actualSize);
 
 			if (OverlayPreviewRules.TryComputeManagerPreviewRect(
 				Type,
