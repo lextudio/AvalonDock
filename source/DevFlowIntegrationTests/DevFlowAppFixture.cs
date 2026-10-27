@@ -213,6 +213,7 @@ public class DevFlowAppFixture : IAsyncLifetime
 
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
+        var startWatch = Stopwatch.StartNew();
 
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(120);
@@ -232,7 +233,11 @@ public class DevFlowAppFixture : IAsyncLifetime
             {
                 var response = await httpClient.GetAsync($"http://localhost:{_port}/api/v1/agent/status");
                 if (response.IsSuccessStatusCode)
+                {
+                    // Per-test restarts make this the dominant cost on slow runners, so it is recorded.
+                    AppendLog("fixture", $"{_projectName} ready on {_port} after {startWatch.ElapsedMilliseconds} ms");
                     return;
+                }
             }
             catch
             {

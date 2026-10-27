@@ -6,6 +6,13 @@ on:
   # The DevFlow legs below cannot all be validated on a developer machine (they need a throwaway X
   # server on Linux and a GUI session on macOS), so allow them to be run on demand.
   workflow_dispatch:
+    inputs:
+      legs:
+        description: 'DevFlow legs to run, comma separated (linux-x64, linux-arm64, macos-arm64, windows-x64, windows-arm64) or "all"'
+        default: all
+      test_args:
+        description: 'Extra arguments for the DevFlow test executable, e.g. -class AvalonDock.DevFlowIntegrationTests.SmokeTests'
+        default: ''
 
 permissions:
   contents: read
@@ -77,6 +84,31 @@ jobs:
           path: TestResults/*.trx
           retention-days: 14
 
+  # Picks the DevFlow legs, so a single slow or failing platform can be re-run on its own.
+  plan:
+    name: Plan DevFlow legs
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.legs.outputs.matrix }}
+    steps:
+      - id: legs
+        shell: bash
+        env:
+          LEGS: ${{ inputs.legs }}
+        run: |
+          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025"},{"name":"windows-arm64","runner":"windows-11-arm"}]'
+          legs="$(echo "$LEGS" | tr -d '[:space:]')"
+          if [ -z "$legs" ] || [ "$legs" = all ]; then
+            matrix="$all"
+          else
+            matrix="$(echo "$all" | jq -c --arg legs ",$legs," '[.[] | .name as $n | select($legs | contains("," + $n + ","))]')"
+          fi
+          if [ "$matrix" = '[]' ] || [ -z "$matrix" ]; then
+            echo "::error::No DevFlow leg matches '$LEGS'."
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   # One end-to-end UI suite, every platform AvalonDock ships for. It launches TestApp (and, where a
   # test needs it, AvalonDockCodeApp) and drives them through the DevFlow agent: no per-platform UI
   # automation framework, so a test that passes on one leg is the same test on the others. On Linux
@@ -85,23 +117,11 @@ jobs:
   # drag and fails it.
   devflow:
     name: DevFlow UI Tests (${{ matrix.name }})
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: linux-x64
-            runner: ubuntu-24.04
-          # Same LibreWPF/ProGPU closure, different native staging (runtimes/linux-arm64).
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-          # LibreWPF on CoreGraphics/AppKit; native input goes through cliclick's CGEventPost.
-          - name: macos-arm64
-            runner: macos-15
-          # Real WPF, so these legs also prove the tests are not accidentally platform-specific.
-          - name: windows-x64
-            runner: windows-2025
-          - name: windows-arm64
-            runner: windows-11-arm
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
 
@@ -274,6 +294,7 @@ jobs:
         working-directory: source/DevFlowIntegrationTests/bin/Debug/net10.0
         env:
           DEVFLOW_TESTAPP_NO_BUILD: '1'
+          TEST_ARGS: ${{ inputs.test_args }}
           # ProGPU renders through wgpu over GLFW, so the windowing environment has to look like a
           # real X11 desktop with software rendering. These are the settings LibreWPF's own
           # eng/progpu-wpf-linux-multi-window-smoke.sh uses - that harness opens several top-level
@@ -294,17 +315,30 @@ jobs:
           PROGPU_BACKEND_DIAGNOSTICS: '1'
         run: |
           $exe = if ($IsWindows) { './AvalonDock.DevFlowIntegrationTests.exe' } else { './AvalonDock.DevFlowIntegrationTests' }
-          & $exe --report-ctrf --results-directory "$env:GITHUB_WORKSPACE/TestResults"
+          $extra = if ($env:TEST_ARGS) { $env:TEST_ARGS -split ' ' } else { @() }
+          & $exe --report-ctrf --results-directory "$env:GITHUB_WORKSPACE/TestResults" @extra
           exit $LASTEXITCODE
+
+      # upload-artifact computes one root for all its paths, and the runner temp folder is not under
+      # the workspace on Windows ("is not a parent directory of ...avalondock-devflow-testapp-9223.log"),
+      # which dropped every Windows result. Collect the application logs next to the test results.
+      - name: Collect application logs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/TestResults" | Out-Null
+          foreach ($dir in @($env:RUNNER_TEMP, '/tmp')) {
+            if ($dir -and (Test-Path $dir)) {
+              Get-ChildItem -Path $dir -Filter 'avalondock-devflow-*.log' -ErrorAction SilentlyContinue |
+                Copy-Item -Destination "$env:GITHUB_WORKSPACE/TestResults"
+            }
+          }
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
         if: always()
         with:
           name: devflow-results-${{ matrix.name }}
-          path: |
-            TestResults/**
-            ${{ runner.temp }}/avalondock-devflow-*.log
-            /tmp/avalondock-devflow-*.log
+          path: TestResults/**
           retention-days: 14
           if-no-files-found: warn
