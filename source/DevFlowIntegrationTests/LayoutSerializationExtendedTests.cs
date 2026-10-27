@@ -131,8 +131,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_WithToolWindowStates_Issue59()
 		{
-			KnownLibreWpfGaps.SkipOnLibreWpf(KnownLibreWpfGaps.ToolTabClick);
-
 			using var client = await TryConnectAsync();
 
 			// A tool window is activated before the save: #59 was an InvalidOperationException during

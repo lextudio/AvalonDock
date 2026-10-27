@@ -388,7 +388,7 @@ namespace TestApp
 				var winInput = this.InputHitTest(winPos) as DependencyObject;
 				foreach (var anchorCtl in FindVisualDescendants<LayoutAnchorControl>(dockManager))
 				{
-					if (anchorCtl.Model?.Title != "AutoHide1 Content") continue;
+					if ((anchorCtl.Model as LayoutContent)?.Title != "AutoHide1 Content") continue;
 					var center = new Point(anchorCtl.ActualWidth / 2, anchorCtl.ActualHeight / 2);
 					for (DependencyObject anc = anchorCtl; anc != null; anc = VisualTreeHelper.GetParent(anc))
 					{
