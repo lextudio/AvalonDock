@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [master, 'release/**']
+  # The OpenAvalon work happens on this branch; every push runs all legs (empty inputs mean "all").
+  push:
+    branches: [opendevelop]
   # The DevFlow legs below cannot all be validated on a developer machine (they need a throwaway X
   # server on Linux and a GUI session on macOS), so allow them to be run on demand.
   workflow_dispatch:
@@ -13,6 +16,11 @@ on:
       test_args:
         description: 'Extra arguments for the DevFlow test executable, e.g. --filter-class AvalonDock.DevFlowIntegrationTests.SmokeTests'
         default: ''
+
+# A newer push supersedes a run that is still going; manual runs are never cancelled by it.
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
