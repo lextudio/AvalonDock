@@ -315,8 +315,34 @@ namespace AvalonDock.DevFlowIntegrationTests
 		public Task ReleaseAsync(double x, double y, CancellationToken ct = default)
 			=> PostPointActionAndAssertOkAsync("/api/v1/ui/actions/release", x, y, "release", ct);
 
-		public Task ClickAsync(double x, double y, CancellationToken ct = default)
-			=> PostPointActionAndAssertOkAsync("/api/v1/ui/actions/click", x, y, "click", ct);
+		public async Task ClickAsync(double x, double y, CancellationToken ct = default)
+		{
+			// Said on stderr, which the CI log keeps for every platform: what the point lands on and
+			// what the application's input diagnostics counted afterwards, so a click that "did
+			// nothing" can be told from one that hit something else or never arrived. TestApp only.
+			string before = null;
+			try { before = await InvokeAsync("avd.hit-test", x, y).ConfigureAwait(false); }
+			catch (Exception) { }
+
+			await PostPointActionAndAssertOkAsync("/api/v1/ui/actions/click", x, y, "click", ct).ConfigureAwait(false);
+
+			if (before != null)
+			{
+				try
+				{
+					await Task.Delay(150, ct).ConfigureAwait(false);
+					var after = await InvokeAsync("avd.input.query").ConfigureAwait(false);
+					Console.Error.WriteLine($"[click] ({x},{y}) hit={Truncate(before, 160)} input={Truncate(after, 600)}");
+				}
+				catch (Exception ex) when (ex is not OperationCanceledException)
+				{
+					Console.Error.WriteLine($"[click] ({x},{y}) diagnostics failed: {ex.Message}");
+				}
+			}
+		}
+
+		private static string Truncate(string value, int max)
+			=> value.Length <= max ? value : value.Substring(0, max) + "...";
 
 		private async Task PostPointActionAndAssertOkAsync(string path, double x, double y, string label, CancellationToken ct)
 		{

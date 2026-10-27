@@ -59,6 +59,7 @@ public class DevFlowAppFixture : IAsyncLifetime
     private readonly object _logSync = new();
     private List<string> _hiddenAppNames = new();
     private readonly string _projectName;
+    private bool _logStarted;
     private readonly int _port;
 
     protected DevFlowAppFixture(string projectName, int port)
@@ -146,7 +147,17 @@ public class DevFlowAppFixture : IAsyncLifetime
             Environment.GetEnvironmentVariable("DEVFLOW_TESTAPP_NO_BUILD"),
             "1",
             StringComparison.Ordinal);
-        File.WriteAllText(LogPath, $"{_projectName} log started {DateTimeOffset.Now:O}{Environment.NewLine}");
+        // Appended, not replaced: the suite restarts the app per test, and the interesting log is
+        // often the one of an instance that has already been replaced.
+        var header = $"{_projectName} log started {DateTimeOffset.Now:O}{Environment.NewLine}";
+        lock (_logSync)
+        {
+            if (_logStarted)
+                File.AppendAllText(LogPath, header);
+            else
+                File.WriteAllText(LogPath, header);
+            _logStarted = true;
+        }
 
         void AppendLog(string stream, string line)
         {
@@ -211,6 +222,15 @@ public class DevFlowAppFixture : IAsyncLifetime
                 $"Failed to start {_projectName}. Ensure .NET SDK is installed. Error: {ex.Message}", ex);
         }
 
+        var started = _process;
+        started.EnableRaisingEvents = true;
+        started.Exited += (sender, _) =>
+        {
+            // A crash is otherwise only visible as "agent not reachable" in the next test. The
+            // process is the one the handler was attached to, not whatever _process is by now.
+            try { AppendLog("fixture", $"{_projectName} exited with code {((Process)sender).ExitCode}"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
+        };
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
         var startWatch = Stopwatch.StartNew();

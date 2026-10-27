@@ -104,18 +104,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			var bounds = await client.QueryBoundsAsync(kind, contentId);
 
-			// What the click will land on, so a click that "did nothing" can be told from one that hit
-			// something else; written to stderr, which the CI log keeps for every platform.
-			try
-			{
-				var hit = await client.InvokeAsync("avd.hit-test", bounds.CenterX, bounds.CenterY);
-				Console.Error.WriteLine($"[click] {kind}/{contentId} bounds=({bounds.X},{bounds.Y},{bounds.Width}x{bounds.Height}) centre=({bounds.CenterX},{bounds.CenterY}) hit={hit}");
-			}
-			catch (Exception ex)
-			{
-				Console.Error.WriteLine($"[click] {kind}/{contentId} hit-test failed: {ex.Message}");
-			}
-
 			await client.ClickAsync(bounds.CenterX, bounds.CenterY);
 		}
 
