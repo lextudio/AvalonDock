@@ -64,14 +64,40 @@ public class DevFlowAppFixture : IAsyncLifetime
     public int AgentPort => _port;
     public string LogPath { get; }
 
+    /// <summary>
+    /// Locates the .NET host the sample applications are started with. The file name matters: on
+    /// Windows the host is <c>dotnet.exe</c>, so a PATH scan for <c>dotnet</c> finds nothing at all
+    /// even on a machine where the SDK is installed properly.
+    /// </summary>
     private static string ResolveDotnetPath()
     {
-        foreach (var candidate in new[]
+        var fileName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+
+        var candidates = new List<string>();
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(dotnetRoot))
+            candidates.Add(Path.Combine(dotnetRoot, fileName));
+
+        if (OperatingSystem.IsWindows())
         {
-            "/usr/local/share/dotnet/dotnet",
-            "/opt/homebrew/bin/dotnet",
-            "/usr/local/share/dotnet/x64/dotnet",
-        })
+            // Where the official installer and actions/setup-dotnet put it.
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "dotnet",
+                fileName));
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "dotnet",
+                fileName));
+        }
+        else
+        {
+            candidates.Add("/usr/local/share/dotnet/" + fileName);
+            candidates.Add("/opt/homebrew/bin/" + fileName);
+            candidates.Add("/usr/local/share/dotnet/x64/" + fileName);
+        }
+
+        foreach (var candidate in candidates)
         {
             if (File.Exists(candidate))
                 return candidate;
@@ -84,7 +110,7 @@ public class DevFlowAppFixture : IAsyncLifetime
             {
                 try
                 {
-                    var candidate = Path.Combine(dir, "dotnet");
+                    var candidate = Path.Combine(dir, fileName);
                     if (File.Exists(candidate))
                         return candidate;
                 }
@@ -92,7 +118,9 @@ public class DevFlowAppFixture : IAsyncLifetime
             }
         }
 
-        throw new FileNotFoundException("dotnet not found on system PATH or at known locations.");
+        throw new FileNotFoundException(
+            $"The .NET host ({fileName}) was not found on PATH or at a known location. " +
+            $"PATH: {envPath}");
     }
 
     public async ValueTask InitializeAsync()
