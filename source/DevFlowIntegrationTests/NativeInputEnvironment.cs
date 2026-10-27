@@ -91,10 +91,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 			if (!OperatingSystem.IsMacOS())
 				return null;
 
-			var bundled = Path.Combine(AppContext.BaseDirectory, "CliclickSharp");
-			if (File.Exists(bundled))
-				return bundled;
-
 			foreach (var candidate in new[] { "/opt/homebrew/bin/cliclick", "/usr/local/bin/cliclick" })
 			{
 				if (File.Exists(candidate))
@@ -103,7 +99,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 			var pathVar = Environment.GetEnvironmentVariable("PATH");
 			if (pathVar is null)
-				return null;
+				return BundledMacCliclick();
 
 			foreach (var dir in pathVar.Split(Path.PathSeparator))
 			{
@@ -118,7 +114,36 @@ namespace AvalonDock.DevFlowIntegrationTests
 				}
 			}
 
-			return null;
+			return BundledMacCliclick();
+		}
+
+		// The macOS legs install the original cliclick and the drag cases are tuned to it: with the C# port
+		// first the same drags stopped reaching the drop targets, so the port is only the fallback there.
+		private static string BundledMacCliclick()
+		{
+			var bundled = Path.Combine(AppContext.BaseDirectory, "CliclickSharp");
+			return File.Exists(bundled) ? bundled : null;
+		}
+
+		/// <summary>
+		/// Moves the OS pointer without pressing anything: through the agent where it keeps the button
+		/// state itself (Linux/XTest), through cliclick's plain <c>m:</c> elsewhere (the agent's drag-move
+		/// reports failure on macOS when no button is held).
+		/// </summary>
+		public static async System.Threading.Tasks.Task MovePointerAsync(DevFlowClient client, double x, double y, System.Threading.CancellationToken ct)
+		{
+			if (UsesAgentDecomposedInput)
+			{
+				await client.DragMoveAsync(x, y, ct).ConfigureAwait(false);
+				return;
+			}
+
+			Assert.SkipUnless(CliclickPath != null, "No cliclick is available to move the pointer.");
+			var startInfo = new System.Diagnostics.ProcessStartInfo { FileName = CliclickPath, UseShellExecute = false };
+			startInfo.ArgumentList.Add($"m:{(int)Math.Round(x)},{(int)Math.Round(y)}");
+			using var process = System.Diagnostics.Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start cliclick move.");
+			await process.WaitForExitAsync(ct).ConfigureAwait(false);
+			Assert.Equal(0, process.ExitCode);
 		}
 	}
 }

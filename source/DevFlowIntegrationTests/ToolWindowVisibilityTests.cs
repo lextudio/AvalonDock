@@ -137,7 +137,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				// The flyout stays while the pointer is over its sidebar button (AvalonDock's own rule, on every
 				// backend), and the click left the pointer there, so move it into the document area first.
 				var manager = await client.QueryBoundsAsync("manager");
-				await client.DragMoveAsync(manager.X + manager.Width - 40, manager.Y + manager.Height - 40, TestContext.Current.CancellationToken);
+				await NativeInputEnvironment.MovePointerAsync(client, manager.X + manager.Width - 40, manager.Y + manager.Height - 40, TestContext.Current.CancellationToken);
 
 				await client.InvokeAsync("avd.document.activate", "document1");
 				await WaitUntilAsync(

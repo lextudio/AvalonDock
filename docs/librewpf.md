@@ -1036,3 +1036,11 @@ Becomes simpler, with one honest caveat.
   pointer there, and on Windows these cases never ran in DevFlow (no native click in the real-WPF agent), so
   the expectation had never been checked. The cases now move the pointer into the document area before
   activating a document, and the skip is gone.
+- 2026-10-27 (CI of `85cde89`): **linux-x64 and linux-arm64 are 118/118 with 0 skips** (the tool-tab, auto-hide
+  click and auto-hide dismissal cases included, on the LibreWPF package with the ProGPU clip fix). macOS: 22
+  failures, both of my making: (1) the agent's `drag-move` reports `ok:false` on macOS without a held button, so
+  the pointer move in the two auto-hide dismissal cases now uses cliclick's plain `m:` there
+  (`NativeInputEnvironment.MovePointerAsync`); (2) the drag/drop-zone cases regressed when the bundled
+  CliclickSharp took priority on macOS (`ecac77d`): the same drags stopped reaching the drop targets. On macOS
+  the installed cliclick (which the CI installs) is preferred again and CliclickSharp is the fallback; Windows
+  keeps CliclickSharp.exe. Whether the C# port can match the original on macOS is a DevFlow (ui-labs) question.
