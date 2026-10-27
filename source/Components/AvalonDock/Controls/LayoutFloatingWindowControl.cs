@@ -51,7 +51,7 @@ namespace AvalonDock.Controls
 
 		// Temporary diagnostics for the Linux drag investigation: whether the portable caption
 		// drag's position timer is running at all, and what position it last asked for.
-		internal static int PortableDragTickCount { get; private set; }
+		internal static int PortableDragUpdateCount { get; private set; }
 		internal static string PortableDragLastRequest { get; private set; }
 		internal bool PortableNativeDraggingForDiagnostics => _portableNativeDragging;
 		internal bool PortableDraggingForDiagnostics => _portableDragging;
@@ -1323,12 +1323,12 @@ namespace AvalonDock.Controls
 
 		private void OnPortableNativeDragTick(object sender, EventArgs e)
 		{
-			if (PortableDragTickCount <= 3 || PortableDragTickCount % 60 == 0)
+			if (PortableDragUpdateCount <= 3 || PortableDragUpdateCount % 60 == 0)
 			{
 				TracePortableDrag(string.Format(
 					CultureInfo.InvariantCulture,
 					"tick: n={0} age={1:F0}ms wpfBtn={2} hidBtn={3} dragging={4}",
-					PortableDragTickCount,
+					PortableDragUpdateCount,
 					(DateTime.UtcNow - _portableDragStartUtc).TotalMilliseconds,
 					Mouse.LeftButton,
 					PlatformHelper.IsLeftButtonDown(),
@@ -1372,17 +1372,44 @@ namespace AvalonDock.Controls
 				return;
 			}
 
-			_portableLastPointer = PlatformHelper.GetCursorPosition();
-			var requestedLeft = _portableLastPointer.X - _portableDragOffset.X;
-			var requestedTop = _portableLastPointer.Y - _portableDragOffset.Y;
+			UpdatePortableDragPosition(GetPortableDragPointer());
+		}
+
+		/// <summary>
+		/// The pointer's absolute screen position during a portable drag.
+		/// </summary>
+		/// <remarks>
+		/// The window is being moved to follow the pointer, so asking WPF for the position inside
+		/// this window and projecting it through <see cref="UIElement.PointToScreen"/> measures
+		/// against wherever the backend has actually put the window, not where the last move asked
+		/// it to go; on a backend that applies moves asynchronously the two disagree and the drag
+		/// drifts behind the pointer. Ask the backend for the pointer itself instead. A cursor
+		/// service that cannot query it at all reports (0,0), in which case the last known position
+		/// is a better answer than jumping the window to the top-left corner.
+		/// </remarks>
+		private Point GetPortableDragPointer()
+		{
+			var pointer = PlatformHelper.GetCursorPosition();
+			return pointer.X == 0 && pointer.Y == 0 ? _portableLastPointer : pointer;
+		}
+
+		/// <summary>
+		/// Moves the window so the grabbed point stays under <paramref name="pointer"/>, and tells
+		/// the drag service where the pointer is so the drop-target overlay follows it.
+		/// </summary>
+		private void UpdatePortableDragPosition(Point pointer)
+		{
+			_portableLastPointer = pointer;
+			var requestedLeft = pointer.X - _portableDragOffset.X;
+			var requestedTop = pointer.Y - _portableDragOffset.Y;
 			PlatformHelper.SetWindowPosition(this, requestedLeft, requestedTop);
-			PortableDragTickCount++;
+			PortableDragUpdateCount++;
 			PortableDragLastRequest =
-				$"pointer={_portableLastPointer.X},{_portableLastPointer.Y} request={requestedLeft},{requestedTop} " +
+				$"pointer={pointer.X},{pointer.Y} request={requestedLeft},{requestedTop} " +
 				$"logical={Left},{Top} handle={PlatformHelper.GetNativeWindowHandle(this)}";
-			if (PortableDragTickCount <= 3 || PortableDragTickCount % 30 == 0)
-				System.Console.Error.WriteLine($"[DRAG-TRACE] ticks={PortableDragTickCount} {PortableDragLastRequest}");
-			_dragService?.UpdateMouseLocation(_portableLastPointer);
+			if (PortableDragUpdateCount <= 3 || PortableDragUpdateCount % 30 == 0)
+				System.Console.Error.WriteLine($"[DRAG-TRACE] updates={PortableDragUpdateCount} {PortableDragLastRequest}");
+			_dragService?.UpdateMouseLocation(pointer);
 		}
 
 		/// <summary>
@@ -1523,8 +1550,9 @@ namespace AvalonDock.Controls
 			base.OnMouseMove(e);
 			if (!_portableDragging || _portableNativeDragging) return;
 
-			var pointer = PointToScreen(e.GetPosition(this));
-			_portableLastPointer = pointer;
+			// This is the path that actually runs on every portable backend, so it - not the
+			// pump - is what keeps the window under the pointer while moves are being routed.
+			var pointer = GetPortableDragPointer();
 			if (_portableMoveTraceCount++ % 20 == 0)
 			{
 				TracePortableDrag(string.Format(
@@ -1535,7 +1563,7 @@ namespace AvalonDock.Controls
 					pointer.Y));
 			}
 
-			_dragService?.UpdateMouseLocation(pointer);
+			UpdatePortableDragPosition(pointer);
 		}
 
 		/// <summary>

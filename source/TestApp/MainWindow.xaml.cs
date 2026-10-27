@@ -2136,7 +2136,7 @@ namespace TestApp
 					windowLeft = floating.Left,
 					windowTop = floating.Top,
 					nativeOrigin = GetNativeWindowOrigin(floating),
-					dragTicks = LayoutFloatingWindowControl.PortableDragTickCount,
+					dragUpdates = LayoutFloatingWindowControl.PortableDragUpdateCount,
 					dragRequest = LayoutFloatingWindowControl.PortableDragLastRequest,
 					nativeDrag = floating.PortableNativeDraggingForDiagnostics,
 					dragging = floating.PortableDraggingForDiagnostics,
