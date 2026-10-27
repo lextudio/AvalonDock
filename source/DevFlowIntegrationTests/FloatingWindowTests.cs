@@ -94,6 +94,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task FloatingWindow_HasReasonableSize_Issue174()
 		{
+			KnownLibreWpfGaps.SkipOnLibreWpf(KnownLibreWpfGaps.FloatingSizeToContent);
+
 			using var client = await TryConnectAsync();
 
 			await CreateFloatingWindowAsync(client);

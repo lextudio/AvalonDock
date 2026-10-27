@@ -1,92 +1,116 @@
-# AvalonDock on LibreWPF: 合成输入拖拽 flake、窗口生命周期崩溃与修复记录
+# AvalonDock on LibreWPF: synthetic-input drag flake, window-lifetime crashes, and the test port
 
-> 本文档是 LibreWPF（`/Users/lextm/wpf-tools/librewpf`，wpf-progpu fork）与 AvalonDock
-> 集成问题的研究笔记。旧版内容（splitter-drag bug 三连修）保留在文末"历史"章节。
-> 本文记录 2026-08 对 **native drag flake** 与 **窗口销毁崩溃** 的完整调查：诊断方法、
-> 根因链条、已实施的修复、以及 LibreWPF 源码修改 → 本地 feed 替换的完整流程。
+> Research notes on the integration between AvalonDock and LibreWPF
+> (`/Users/lextm/wpf-tools/librewpf`, the wpf-progpu fork).
+>
+> Part one (sections 1-8) is the 2026-08 investigation of **native drag flake** and **window-destroy
+> crashes**: the diagnostics, the causal chains, the fixes that were applied, and the LibreWPF
+> source-change to local-feed replacement procedure.
+>
+> Part two (section 9) is the 2026-10 work that replaces the FlaUI UI tests with DevFlow suites so
+> one suite runs on Windows x64/ARM64, macOS arm64 and Linux x64/ARM64. It records what is done,
+> what CI shows, and what is left.
+>
+> The older splitter-drag fixes are kept as history at the end.
 
-## 1. 背景：测试基础设施与事件链路
+## 1. Background: test infrastructure and the event chain
 
-DropTargetZone 集成测试用 **cliclick**（macOS 合成鼠标事件）驱动真实拖拽。事件链路：
+The DropTargetZone integration tests drive real drags with **cliclick** (synthetic mouse events on
+macOS). The event chain is:
 
 ```
-cliclick (CGEventPost 注入 kCGHIDEventTap)
-  → GLFW cocoa 窗口 (libglfw.3.dylib, 3.4.0, Silk.NET 2.23.0)
-  → Silk.NET Input 回调 (SilkNetWpfInputService)
-  → LibreWPF WPF 兼容层 (ProGpuWpfWindowHost 转发)
-  → WPF 输入管线 (Mouse.LeftButton / MouseMove 等)
-  → AvalonDock (LayoutFloatingWindowControl 原生拖拽检测 + DragService + OverlayWindow)
+cliclick (CGEventPost into kCGHIDEventTap)
+  -> GLFW cocoa window (libglfw.3.dylib, 3.4.0, Silk.NET 2.23.0)
+  -> Silk.NET input callbacks (SilkNetWpfInputService)
+  -> LibreWPF WPF compatibility layer (forwarded by ProGpuWpfWindowHost)
+  -> WPF input pipeline (Mouse.LeftButton / MouseMove and friends)
+  -> AvalonDock (LayoutFloatingWindowControl native drag detection + DragService + OverlayWindow)
 ```
 
-**关键事实**（实测）：
-- cliclick 的 `dd`/`dm`/`du` 是**合成事件**（`CGEventPost`），**不更新物理 HID 按钮状态**。
-- `MacOSCursorService.IsLeftButtonDown()`（AvalonDock/Platform）走 `CGEventSourceButtonState`
-  —— 读物理状态 —— 对 cliclick 注入的事件**恒返回 false**（实测诊断日志确认 `physDown=False`）。
-- WPF 的 `Mouse.LeftButton` 只从**事件管线**更新 —— 合成 `dd` 事件被 WPF 处理后才会变 Pressed。
+**Facts measured on this machine:**
 
-## 2. Drag flake：cliclick 合成 `dd` 事件未被 WPF 处理
+- cliclick's `dd`/`dm`/`du` are **synthetic events** (`CGEventPost`); they do **not** update the
+  physical HID button state.
+- `MacOSCursorService.IsLeftButtonDown()` (AvalonDock/Platform) goes through
+  `CGEventSourceButtonState` - the physical state - so it **always returned false** for
+  cliclick-injected events (the diagnostic log confirmed `physDown=False`).
+- WPF's `Mouse.LeftButton` is only updated from the **event pipeline**: a synthetic `dd` becomes
+  Pressed once WPF has processed it.
 
-### 症状
+## 2. Drag flake: cliclick's synthetic `dd` is not processed by WPF
 
-完整测试（22 个 zone/preview 用例）随机 1-2 个失败，失败模式二选一：
+### Symptoms
 
-- `compass never showed drop target 'X' during discovery` —— discovery 阶段 8s 内 compass 空；
-- `live drop target 'X' was not current before release; Target=..., Targets=[]` —— 拖到目标中心后
-  `currentDropTarget` 从未出现。
+The full suite (22 zone/preview cases) failed randomly in one or two cases, in one of two ways:
 
-失败随机落在不同 zone（DockLeft/DockRight/DocumentPaneDockRight/AnchorablePaneDockTop 等都出现过），
-且与断言无关（dock 根本没发生）。
+- `compass never showed drop target 'X' during discovery` - the compass stayed empty for the 8 s
+  discovery window;
+- `live drop target 'X' was not current before release; Target=..., Targets=[]` - after dragging to
+  the target centre, `currentDropTarget` never appeared.
 
-### 复现
+Failures landed on different zones at random (DockLeft, DockRight, DocumentPaneDockRight,
+AnchorablePaneDockTop and others all showed up) and had nothing to do with the assertions: the dock
+simply never happened.
 
-`/var/folders/.../T/opencode/drag-diag4.sh` 完全模拟测试流程（position-main-window →
-reset → float → discovery drag → 第二次 drag 到 DockLeft 中心 → release），20 次一轮：
-**失败率稳定 15-25%**（15-17/20 成功）。同时抓 `avd.query.drag-state` 现场。
+### Reproduction
 
-### 失败现场（诊断数据）
+`/var/folders/.../T/opencode/drag-diag4.sh` reproduced the test flow exactly (position-main-window ->
+reset -> float -> discovery drag -> a second drag to the centre of DockLeft -> release), 20 rounds
+per run: **a steady 15-25% failure rate** (15-17 of 20 succeeded), with `avd.query.drag-state`
+captured at the point of failure.
 
-失败时 `drag-state` 的关键字段：
+### What a failure looked like
+
+The interesting fields of `drag-state` on failure:
 
 ```json
 {
-  "overlayLeft": null, "overlayTop": null, ...   // overlay 从未创建
+  "overlayLeft": null, "overlayTop": null, ...   // the overlay was never created
   "currentDropTarget": null,
-  "left": 560, "top": 718,                        // 浮动窗被拖动过（tick 在跑）
-  "currentPointer": {"X": 658, "Y": 735}          // 指针在 manager 内
+  "left": 560, "top": 718,                        // the floating window did move (the tick was running)
+  "currentPointer": {"X": 658, "Y": 735}          // the pointer is inside the manager
 }
 ```
 
-两种子模式：
-- **子模式 A**：浮动窗移动了（tick 更新 Left/Top）但 overlay 从未创建（`UpdateMouseLocation`
-  从未命中 host）；
-- **子模式 B**：浮动窗完全没动（`left/top` 保持 press 前位置）。
+Two sub-modes:
 
-给 `LayoutFloatingWindowControl.OnPortableNativeLocationChanged` 加临时诊断日志后拿到**决定性证据**：
+- **Sub-mode A**: the floating window moved (the tick updated Left/Top) but the overlay was never
+  created (`UpdateMouseLocation` never matched a host);
+- **Sub-mode B**: the floating window did not move at all (`left/top` stayed at the pre-press
+  position).
+
+Temporary diagnostic logging in `LayoutFloatingWindowControl.OnPortableNativeLocationChanged`
+produced the **decisive evidence**:
 
 ```
-[DRAGDIAG] native move ignored: leftBtn=Released physDown=False at 658,735   (×36)
+[DRAGDIAG] native move ignored: leftBtn=Released physDown=False at 658,735   (x36)
 ```
 
-**cliclick 的 `dd` 事件没有到达 WPF**（`Mouse.LeftButton=Released`）→ 窗口移动时
-`buttonDown` 检查（`Mouse.LeftButton==Pressed || IsLeftButtonDown()`）为 false → 拖拽不启动。
+**cliclick's `dd` never reached WPF** (`Mouse.LeftButton=Released`), so the `buttonDown` check in the
+window-move path (`Mouse.LeftButton==Pressed || IsLeftButtonDown()`) was false and the drag never
+started.
 
-### 根因链
+### Causal chain
 
-1. cliclick `dd` 注入合成按下事件（`CGEventPost`，kCGHIDEventTap）。
-2. 早期曾把失败归因于 macOS “首次点击被激活消耗”。后续核对实际使用的 GLFW 3.4
-   官方 Cocoa 源码后，这个解释不能成立为既定根因：`GLFWContentView` 明确实现了
-   `acceptsFirstMouse:` 并返回 `YES`。非 key 窗口状态仍会改变事件时序，但不能再声称
-   GLFW 没有 first-mouse 传递路径；`dd` 丢失的精确位置仍需 native callback trace 证明。
-3. 即使事件被处理，`CGEventSourceButtonState`（物理状态）对合成事件恒 false，
-   与 WPF 事件状态（`Mouse.LeftButton`）之间存在**处理时序竞态**：
-   - tick（16ms DispatcherTimer）若在注入事件被 WPF 处理**之前**检查按钮状态
-     → 误判"按钮已释放" → `EndPortableDrag` 立即中止 drag。
+1. cliclick `dd` injects a synthetic press (`CGEventPost`, kCGHIDEventTap).
+2. An earlier explanation blamed macOS "first click consumed by activation". Reading the actual
+   GLFW 3.4 Cocoa sources showed that this cannot be stated as a confirmed root cause:
+   `GLFWContentView` does implement `acceptsFirstMouse:` and returns `YES`. A non-key window still
+   changes event timing, but GLFW cannot be said to lack a first-mouse path; the precise place where
+   `dd` is lost still needs a native callback trace.
+3. Even when the event is processed, `CGEventSourceButtonState` (physical state) is always false for
+   synthetic events, which creates a **timing race against the WPF event state**
+   (`Mouse.LeftButton`):
+   - if the tick (a 16 ms `DispatcherTimer`) checks the button state **before** the injected event
+     has been processed by WPF, it concludes "button released" and `EndPortableDrag` aborts the drag
+     immediately.
 
-### 已实施的修复
+### Fixes applied
 
-**AvalonDock**（`src/Components/AvalonDock/Controls/LayoutFloatingWindowControl.cs`）：
+**AvalonDock** (`src/Components/AvalonDock/Controls/LayoutFloatingWindowControl.cs`):
 
-watchdog 按钮检查加**启动宽限期** `PortableNativeDragGracePeriod = 500ms`：
+the watchdog's button check gained a **start-up grace period**,
+`PortableNativeDragGracePeriod = 500ms`:
 
 ```csharp
 var dragAge = DateTime.UtcNow - _portableDragStartUtc;
@@ -98,216 +122,255 @@ if (dragAge > PortableNativeDragGracePeriod
 }
 ```
 
-给合成 `dd` 事件一个到达 WPF 输入管线的窗口，避免拖拽启动瞬间被 watchdog 误杀。
-**效果**：完整测试从稳定 1-2 个 flake 改善到 0-1 个（22/22 一次、21/22 一次、20/22 两次）。
-**未根除**：子模式 B（`dd` 被 macOS 激活消耗）不经过 watchdog 路径，宽限期不覆盖。
+This gives the synthetic `dd` a window in which to reach the WPF input pipeline, so the watchdog no
+longer kills the drag at the instant it starts.
+**Effect**: the full suite went from a steady 1-2 flakes to 0-1 (22/22 once, 21/22 once, 20/22
+twice). **Not eradicated**: sub-mode B (a `dd` consumed by macOS activation) never reaches the
+watchdog, so the grace period does not cover it.
 
-**AvalonDock**（`DockingManager.cs`）：`GetOverlayWindowHostsByZOrder` 加异常 fallback
-（Win32 z-order 枚举在便携后端失败时降级为普通枚举），防御性。
+**AvalonDock** (`DockingManager.cs`): `GetOverlayWindowHostsByZOrder` got an exception fallback (when
+the Win32 z-order enumeration fails on a portable backend it degrades to a plain enumeration). This
+is defensive.
 
-**LibreWPF**（`src/ProGPU.Wpf/Platform/SilkNetWpfInputService.cs`）：
+**LibreWPF** (`src/ProGPU.Wpf/Platform/SilkNetWpfInputService.cs`):
 
-`mouseUp` 不再因"该按钮没有记录到 down"而丢弃事件。原实现：
+`mouseUp` no longer drops an event because no matching down was recorded. The original code was:
 
 ```csharp
-if (!pressedButtons.Remove(button)) { return; }   // down 丢失 → up 被吞
+if (!pressedButtons.Remove(button)) { return; }   // down lost -> up swallowed
 ```
 
-合成输入下 down 偶发丢失时，up 被吞会让 WPF `Mouse.LeftButton` **永久卡在 Pressed**，
-腐蚀后续所有拖拽。现在无条件转发 up（WPF 自己维护按钮状态）。**效果**：v4 脚本 16-18/20，
-无明显恶化也无显著改善 —— 属正确性修复，非 flake 根治。
+With synthetic input, a down is occasionally lost, and swallowing the up leaves WPF's
+`Mouse.LeftButton` **stuck in Pressed**, which corrupts every later drag. The up is now always
+forwarded (WPF maintains the button state itself). **Effect**: the v4 script went to 16-18/20 -
+neither clearly worse nor clearly better. It is a correctness fix, not a cure for the flake.
 
-**尝试过但无效的方案**：
-- `avd.activate`（press 前激活主窗口）：反而 0/20 全失败 —— 主窗口 key 后浮动窗仍非 key，
-  点击浮动窗标题栏时激活消耗更稳定地发生；且 activate 可能移动浮动窗使坐标失效。
-- 加长 press 后等待：无变化。
-- `GetCursorPos` shim（`ProGPU.Wpf.Sdk.Win32Compat.c`）恒返回 `(0,0)`：AvalonDock 的
-  `PlatformHelper.GetCursorPosition` 走 `MacOSCursorService`（`CGEventGetLocation`），
-  不经过该 shim，无关。
+**Attempts that did not help:**
 
-### 2026-08-08 测试侧加固（最终 22/22）
+- `avd.activate` (activating the main window before the press): made it worse - 0/20. Once the main
+  window is key the floating window still is not, so activation consumption on a caption click
+  happens even more reliably; activation can also move the floating window and invalidate the
+  coordinates.
+- A longer wait after the press: no change.
+- A `GetCursorPos` shim (`ProGPU.Wpf.Sdk.Win32Compat.c`) that always returns `(0,0)`: irrelevant,
+  because AvalonDock's `PlatformHelper.GetCursorPosition` goes through `MacOSCursorService`
+  (`CGEventGetLocation`) and never uses that shim.
 
-后续观察确认，flake 不只来自丢失的 `dd`，测试本身还曾在**错误的屏幕起点**注入 mouse-down：
-托管 `Window.Left/Top`、`PointToScreen` 与 GLFW native frame 可能短暂不一致；浮动窗也可能位于
-主窗口后方。此时计算坐标虽然落在“托管 floating bounds”内，macOS 实际接收者却是主窗口或
-桌面/系统 UI，严重时会误触 macOS 系统动作。
+### 2026-08-08 test-side hardening (final 22/22)
 
-现在所有 floating body 预热 press 和 caption drag-down 前都有硬性门禁：
+Later observations showed the flake did not only come from a lost `dd`: the tests themselves had
+injected mouse-down at **the wrong screen origin**. Managed `Window.Left/Top`, `PointToScreen` and the
+GLFW native frame can disagree for a moment, and a floating window can sit behind the main window. In
+that case the computed point was inside the "managed floating bounds" while macOS delivered the click
+to the main window or to the desktop/system UI - in the worst case triggering a real macOS action.
 
-1. `avd.query.bounds` / `avd.query.drag-handle` 对浮动窗优先读取 ProGPU/GLFW 的 native
-   `Position`/`Size`，浮动视觉树的屏幕坐标转换也以 native origin 为准；
-2. cliclick 只做 mouse move，随后 `avd.query.cursor` 通过 `MacOSCursorService` 回读 native
-   cursor；请求点与实测点误差超过 2px 时禁止 mouse-down；
-3. 实测 cursor 必须仍位于 floating native frame；caption drag 还必须落在 caption handle；
-4. `avd.query.floating-zorder` 必须确认浮动窗位于主窗口之前；若不在前景，TestApp 先直接
-   `Activate()` 浮动窗，再重新读取 frame/z-order，不能靠一次可能点错窗口的鼠标点击激活；
-5. 激活预热的 down/up 前后按系统双击间隔隔离（macOS 使用
-   `NSEvent.doubleClickInterval`），避免 caption 单击与邻近事件合并成双击。
+Every floating-body warm-up press and every caption drag-down is now gated:
 
-zone 坐标 discovery 不再额外执行一次易 flake 的真实拖拽。`avd.debug-show-overlay` 现在先
-`UpdateLayout()`，返回全部 indicator 的屏幕 bounds；测试按目标 pane 距离选择对应 indicator，
-随后只执行一次正式 held native drag。命中目标后，zone/preview 测试由 TestApp 确定性调用
-AvalonDock 当前 drop，再释放合成鼠标。后续完整套件证明，即使 `manager.up` 已收到，WPF 的
-`Mouse.LeftButton` 仍可能保持 `Pressed`，所以 `NativeInputIntegrationTests` 的浮窗回 dock
-用例也改为先完成已经命中的 current drop，再发送真实 `du` 做输入清理；测试不再把“合成
-mouse-up 一定触发 dock”当作可靠契约。
+1. `avd.query.bounds` / `avd.query.drag-handle` read the ProGPU/GLFW native `Position`/`Size` for
+   floating windows first, and the floating visual tree's screen coordinates are converted from the
+   native origin;
+2. cliclick only moves the mouse; `avd.query.cursor` then reads the native cursor back through
+   `MacOSCursorService`, and a mouse-down is refused when the requested and measured points differ
+   by more than 2 px;
+3. the measured cursor must still be inside the floating native frame, and a caption drag must land
+   on the caption handle;
+4. `avd.query.floating-zorder` must confirm the floating window is in front of the main window; if it
+   is not, TestApp calls `Activate()` on the floating window directly and re-reads frame and
+   z-order rather than relying on a click that may hit the wrong window;
+5. activation warm-up down/up pairs are separated by the system double-click interval (macOS:
+   `NSEvent.doubleClickInterval`) so a caption click cannot merge with a neighbouring event into a
+   double click.
 
-完整串行运行还发现两种单跑不易出现的前置状态，均在 mouse-down 之前处理：
+Zone-coordinate discovery no longer runs an extra, flake-prone real drag. `avd.debug-show-overlay`
+now calls `UpdateLayout()` first and returns the screen bounds of every indicator; the test picks the
+indicator nearest the target pane and then performs a single real held drag. Once the target is hit,
+the zone/preview tests have TestApp complete AvalonDock's current drop deterministically before the
+synthetic mouse is released. The full suite later proved that WPF's `Mouse.LeftButton` can stay
+`Pressed` even after `manager.up` has been received, so `NativeInputIntegrationTests`' float-back-to-
+dock case also completes the already-hit current drop first and then sends the real `du` to clean up
+the input state. The tests no longer treat "a synthetic mouse-up always triggers the dock" as a
+reliable contract.
 
-- layout transition 中个别临时 target 可出现负 extent；`GetScreenBounds()` 跳过这种不可命中
-  rect，避免枚举其他有效 target 时整体抛异常；
-- 新建 floating 的 native frame 偶尔仍停留在屏幕上方，或仅 cursor move 被 key-window 切换
-  吞掉。测试会回读 native frame/cursor；不安全时绝不按下，而是程序化 dock、重建浮窗并重试。
+A full serial run also exposed two preconditions that rarely appear in isolated runs, both handled
+before mouse-down:
 
-最终验证命令与结果：
+- during a layout transition individual temporary targets can have a negative extent;
+  `GetScreenBounds()` skips such unhittable rects instead of throwing while enumerating the other,
+  valid targets;
+- a freshly created floating window's native frame can still be above the screen, or a cursor-only
+  move can be swallowed by a key-window switch. The test re-reads the native frame and cursor; when
+  it is not safe it never presses, but docks programmatically, recreates the floating window and
+  retries.
+
+Final verification command and result:
 
 ```bash
 dotnet run --project source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj -- \
-  --filter-class AvalonDock.DevFlowIntegrationTests.DropTargetZoneIntegrationTests --parallel none
+  -class AvalonDock.DevFlowIntegrationTests.DropTargetZoneIntegrationTests -parallel none
 # total: 22, succeeded: 22, failed: 0, duration: 4m 40s
 ```
 
-加入生命周期与安全重试修正后的最终全套验证：
+Final full-suite verification including the lifetime and safe-retry corrections:
 
 ```bash
 dotnet run --project source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj -- \
-  --parallel none
+  -parallel none
 # total: 56, succeeded: 56, failed: 0, duration: 6m 16s
 ```
 
-测试代码不应主动截图。UnoDevelop `MainMenuTests.ViewTestsClickShowsTestsPad` 中遗留的
-`/api/v1/ui/screenshot` 调用已删除；本组运行没有截图步骤。
+Test code must not take screenshots on its own. The leftover `/api/v1/ui/screenshot` call in
+UnoDevelop's `MainMenuTests.ViewTestsClickShowsTestsPad` was removed; this run has no screenshot
+step.
 
-## 3. 崩溃 A：`resignKeyWindow` 通知 observer 悬垂（SIGBUS）
+## 3. Crash A: `resignKeyWindow` notifies a dangling observer (SIGBUS)
 
-### 崩溃栈
+### Stack
 
 ```
 EXC_BAD_ACCESS / KERN_PROTECTION_FAILURE
-__CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__   ← observer 悬垂
-AppKit -[NSWindow resignKeyWindow] → _sendResignKeyWindow → _changeKeyAndMainLimitedOK
+__CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__   <- dangling observer
+AppKit -[NSWindow resignKeyWindow] -> _sendResignKeyWindow -> _changeKeyAndMainLimitedOK
 AppKit -[NSWindow _handleLeftMouseDownEvent:isDelayedEvent:]   (isDelayedEvent:YES)
-AppKit -[NSWindow(NSEventRouting) sendEvent:] → libglfw.3.dylib
+AppKit -[NSWindow(NSEventRouting) sendEvent:] -> libglfw.3.dylib
 ```
 
-### 触发与根因
+### Trigger and root cause
 
-- 触发点：**cliclick 点击时窗口 key 状态变化**（后台运行时窗口非 key，点击触发激活/失活切换），
-  与 flake 的"激活消耗"同源。
-- 栈顶表现为 AppKit 派发 `NSWindowDidResignKeyNotification` 时访问坏地址。GLFW 的
-  `GLFWWindowDelegate.windowDidResignKey:` 确实是该通知的接收路径之一，但 GLFW 3.4
-  源码并没有显式 `NSNotificationCenter addObserver:`；它通过 `NSWindow.delegate` 接收，销毁时
-  先 `setDelegate:nil` 再 release delegate。因此“GLFW observer 未移除”目前只是候选假设，
-  不能当作已证实根因。
-- 之后任何一次 key 状态变化（点击）都会走到悬垂地址 → SIGBUS。
+- Trigger: **a key-state change caused by a cliclick click** (a background window is not key, so the
+  click activates or deactivates it) - the same origin as the flake's "activation consumption".
+- The top of the stack is AppKit dereferencing a bad address while dispatching
+  `NSWindowDidResignKeyNotification`. GLFW's `GLFWWindowDelegate.windowDidResignKey:` is one of the
+  receivers of that notification, but GLFW 3.4's sources contain no explicit
+  `NSNotificationCenter addObserver:`; it receives through `NSWindow.delegate`, and on destroy it
+  calls `setDelegate:nil` before releasing the delegate. "GLFW leaves an observer registered" is
+  therefore only a candidate hypothesis, not a confirmed root cause.
+- After that, any key-state change (any click) reaches the dangling address -> SIGBUS.
 
-### 可修层
+### Where it can be fixed
 
-**GLFW native（libglfw.3.dylib，由 Silk.NET 2.23.0 打包 `ultz.native.glfw` 3.4.0）**。
-LibreWPF 托管源码（ProGPU.Wpf 项目）没有任何 NSNotificationCenter/ObjC observer 注册代码
-（全仓库 grep 确认）。GLFW 当前 master 的 Cocoa 销毁顺序与 3.4 在这一段相同，故“直接换
-master 就会修复”没有源码依据。候选动作：
-- 在 GLFW `GLFWWindowDelegate` 的 resign/close/dealloc 与 `_glfwDestroyWindowCocoa` 加原生日志，
-  用对象地址证明回调是否发生在 delegate/window 释放之后；
-- 替换 GLFW native 版本仍可做 A/B，但必须以复现率为证据；
-- 降低浮动窗创建/销毁频率（AvalonDock 层浮动窗复用）。
+**GLFW native** (`libglfw.3.dylib`, packaged by Silk.NET 2.23.0 as `ultz.native.glfw` 3.4.0). The
+LibreWPF managed sources (ProGPU.Wpf) contain no NSNotificationCenter/ObjC observer registration at
+all (checked by grepping the whole repository). GLFW master's Cocoa destroy order is the same as 3.4
+in this area, so "upgrade to master and it is fixed" has no source-level basis. Candidate actions:
 
-## 4. 崩溃 B：`CUIThemeFacet` 解码 CAPackage 崩溃（EXC_BAD_ACCESS）
+- add native logging to GLFW's `GLFWWindowDelegate` resign/close/dealloc and to
+  `_glfwDestroyWindowCocoa`, and prove with object addresses whether the callback happens after the
+  delegate or window was released;
+- replacing the GLFW native build is still a valid A/B, but only with the reproduction rate as
+  evidence;
+- reduce how often floating windows are created and destroyed (reuse them in AvalonDock).
 
-### 崩溃栈（2026-08-08 09:25 实测）
+## 4. Crash B: `CUIThemeFacet` crashes while decoding a CAPackage (EXC_BAD_ACCESS)
+
+### Stack (measured 2026-08-08 09:25)
 
 ```
 EXC_BAD_ACCESS / EXC_ARM_DA_ALIGN at 0x9
-CFRelease → __CFBasicHashAddValue → CFDictionarySetValue
-NSKeyedUnarchiver decodeObject* → [CALayer initWithCoder:] (×2 层)
+CFRelease -> __CFBasicHashAddValue -> CFDictionarySetValue
+NSKeyedUnarchiver decodeObject* -> [CALayer initWithCoder:] (x2 levels)
 [CAPackage _readFromArchiveData:options:error:]
 +[CAPackage packageWithData:type:options:error:]
--[CUIThemeFacet _makeLayerFromCAPackageData] → updateLayer:effects:
+-[CUIThemeFacet _makeLayerFromCAPackageData] -> updateLayer:effects:
 CUICoreThemeRenderer::CreateOrUpdateVisualEffectLayer / CreateOrUpdateLayer
 ```
 
-### 当前判断
+### Current assessment
 
-**macOS AppKit 主题渲染器（CUIThemeFacet）创建/更新 Visual Effect Layer（毛玻璃材质）时**
-解码 `CAPackage`（图层包归档）→ 访问已释放对象 → `CFRelease` 崩溃。
-本轮加固过程中再次多次复现，均发生在频繁 float/drop/layout restore 后；堆栈稳定落在
-AppKit/CoreUI，但目前只能把“AppKit 系统层 bug”视为**高概率假设**，还不能排除 LibreWPF
-错误的 NSVisualEffectView 生命周期、跨线程更新或过早释放间接破坏 AppKit 状态。
-`restorable=NO` 不能阻止该路径（崩溃在 theme 渲染，不在状态保存）。
+**The macOS AppKit theme renderer (CUIThemeFacet)** decodes a `CAPackage` (a layer archive) while
+creating or updating a Visual Effect Layer (the vibrancy material), touches a freed object, and
+crashes in `CFRelease`. It reproduced repeatedly during this hardening work, always after frequent
+float/drop/layout-restore cycles; the stack is consistently inside AppKit/CoreUI. For now "an AppKit
+system-layer bug" is only a **high-probability hypothesis** - a wrong NSVisualEffectView lifetime,
+a cross-thread update, or an early release in LibreWPF could still be corrupting AppKit state
+indirectly. `restorable=NO` does not prevent it (the crash is in theme rendering, not in state
+restoration).
 
-### 2026-08-08 生命周期 A/B
+### 2026-08-08 lifetime A/B
 
-新增两个不截图的 DevFlow 压力测试，将 native mouse 与窗口生命周期分开：
+Two DevFlow stress tests that take no screenshots separated native mouse input from window
+lifetime:
 
-- 100 次 `float → dock`（只创建/销毁带标题栏浮窗）：通过，约 39 秒；
-- 100 次 `float → show transparent overlay + DockLeft preview → hide overlay → dock`：通过，
-  约 60 秒。
+- 100 x `float -> dock` (creating and destroying only the titled floating window): passed, ~39 s;
+- 100 x `float -> show transparent overlay + DockLeft preview -> hide overlay -> dock`: passed,
+  ~60 s.
 
-这说明“频繁销毁浮窗”以及“频繁销毁透明 overlay”都不是 Crash B 的充分条件。LibreWPF
-没有显式创建 `NSVisualEffectView`；透明化只对 GLFW `NSWindow` 调用 `setOpaque:NO` 与
-`setBackgroundColor:NSColor.clearColor`。结合崩溃位于 `CUIThemeFacet`，当前更精确的假设是：
-系统为 **titled GLFW window 的 AppKit frame/titlebar** 创建 visual-effect layer，真实激活、
-拖动或 key-window 切换与窗口关闭交错时触发了主题层更新竞态。下一轮 A/B 应加入安全的真实
-激活/拖动事件，而不是继续单纯增加无输入的 create/destroy 次数。
+So neither "frequent floating-window destruction" nor "frequent transparent-overlay destruction" is
+sufficient to trigger Crash B. LibreWPF never creates an `NSVisualEffectView` explicitly; making a
+window transparent only calls `setOpaque:NO` and `setBackgroundColor:NSColor.clearColor` on the GLFW
+`NSWindow`. With the crash inside `CUIThemeFacet`, the more precise hypothesis is that the system
+creates a visual-effect layer **for the AppKit frame/titlebar of a titled GLFW window**, and that a
+real activation, drag or key-window switch interleaved with window close triggers a race in the
+theme-layer update. The next A/B round should add safe real activation/drag events instead of
+increasing the number of input-free create/destroy cycles.
 
-### 2026-08-08 AppKit view-tree 实证
+### 2026-08-08 AppKit view-tree evidence
 
-`avd.query.macos-view-tree` 现在从真实 `NSWindow*` 的 `contentView.superview` 向下遍历 AppKit
-view tree（只读、不截图），记录类名、对象地址、`hidden` 和 window `styleMask`。实测：
+`avd.query.macos-view-tree` now walks the AppKit view tree down from a real `NSWindow*`'s
+`contentView.superview` (read-only, no screenshots), recording class names, object addresses,
+`hidden` and the window's `styleMask`. Measured:
 
-| 窗口 | styleMask | `NSVisualEffectView` | 关键状态 |
+| Window | styleMask | `NSVisualEffectView` | Key state |
 |---|---:|---:|---|
-| main | 15 | 2 | frame 直属一个、titlebar background 内一个，均未隐藏 |
-| floating | 32777 | 2 | frame 直属一个未隐藏；titlebar background 已隐藏，但其 effect 子 view 自身未隐藏 |
-| transparent overlay | 32777 | 1 | 位于已隐藏的 titlebar background 下；没有 frame 直属 effect |
+| main | 15 | 2 | one directly under the frame and one inside the titlebar background, neither hidden |
+| floating | 32777 | 2 | one unhidden directly under the frame; the titlebar background is hidden but its effect subview is not |
+| transparent overlay | 32777 | 1 | sits under the hidden titlebar background; no frame-level effect |
 
-由此可以排除“LibreWPF 显式创建 `NSVisualEffectView`”和“只有普通 titled window 才有该
-对象”两种简单解释。`WindowStyle.None` 在 portable backend 下仍是带
-`NSWindowStyleMaskFullSizeContentView` 的 AppKit theme frame，而不是完全没有 theme/titlebar
-view tree 的纯 borderless window。不过 overlay 的 effect 有隐藏父节点，floating 则有一个
-未隐藏的 frame-level effect。曾做过一个 TestApp A/B：只从 custom-chrome/full-size floating
-window 的 AppKit frame 移除直属 `NSVisualEffectView`。刷新 LibreWPF local feed 后，真实 drag
-多次出现 `EXC_BAD_ACCESS/SIGSEGV → objc_msgSend → 托管 P/Invoke`；即使先用
-`NSApplication.orderedWindows` 验证指针，检查与后续消息之间仍有生命周期竞态。因此该 A/B
-已完全停用，不能作为产品修复。Crash B 仍应在 LibreWPF/AppKit 窗口生命周期层继续调查。
+That rules out the two simple explanations ("LibreWPF creates an `NSVisualEffectView` explicitly"
+and "only an ordinary titled window has that object"). Under the portable backend `WindowStyle.None`
+is still an AppKit theme frame with `NSWindowStyleMaskFullSizeContentView`, not a pure borderless
+window without a theme/titlebar view tree. The overlay's effect has a hidden parent, while the
+floating window has an unhidden frame-level effect. One TestApp A/B removed the frame-level
+`NSVisualEffectView` from a custom-chrome/full-size floating window. After refreshing the LibreWPF
+local feed, real drags repeatedly produced `EXC_BAD_ACCESS/SIGSEGV -> objc_msgSend -> managed
+P/Invoke`; even with the pointer verified through `NSApplication.orderedWindows` first, there is
+still a lifetime race between the check and the following message. That A/B was therefore abandoned
+completely and cannot be a product fix. Crash B needs further investigation in LibreWPF's/AppKit's
+window-lifetime layer.
 
-同一轮 native 坐标诊断还发现 overlay 的托管 `Left/Top` 与实际 Cocoa frame 会偶发分离；
-之前 drag-state 和 preview 转屏幕坐标混用了 overlay managed origin 与 manager native origin，
-会产生假偏移。现在所有 preview/overlay 诊断统一使用真实 native origin，并且 overlay 在
-`Show()`、native handle 创建之后通过 `INativeWindowService.SetWindowPosition` 再校正一次位置。
+The same native-coordinate diagnostics also found that the overlay's managed `Left/Top` and its real
+Cocoa frame occasionally separate; drag-state and preview-to-screen conversions used to mix the
+overlay's managed origin with the manager's native origin, producing false offsets. All
+preview/overlay diagnostics now use the real native origin, and the overlay corrects its position
+once more through `INativeWindowService.SetWindowPosition` after `Show()` and native handle creation.
 
-长序列进一步证明问题不只是刷新时机：ProGPU 的 `TryGetWindowHost(overlay)` 会偶发返回 floating
-或 main window 的 native host。现在 main、floating、overlay 在 source 初始化时登记 native
-handle 所有权；重复 handle 会被拒绝，overlay 未取得独占 handle 时禁止调用原生移动。macOS
-floating 预定位和 portable caption drag 也直接使用固定 native handle，避免 LibreWPF
-`Window.Left/Top` setter 串窗并移动 main window。zone 理论用例各自重启 TestApp，阻断透明原生
-窗口生命周期的跨用例污染。逐项恢复
-XML layout 曾导致 floating native window 关闭期间 UI 线程卡死，现改为下一项开始时执行确定性
-layout reset，并由 20 秒 action watchdog 报出真正卡住的 action。
+Long sequences further proved this is not only a refresh-timing problem: ProGPU's
+`TryGetWindowHost(overlay)` occasionally returned the floating or main window's native host. Main,
+floating and overlay windows now register native handle ownership when the source is initialised;
+duplicate handles are rejected, and overlay movement is refused while the overlay has no exclusive
+handle. macOS floating pre-positioning and the portable caption drag also use the fixed native handle
+directly, so LibreWPF's `Window.Left/Top` setter can no longer cross windows and move the main window.
+Each zone theory case now restarts TestApp, which stops a transparent native window's lifetime from
+leaking across cases. Restoring the XML layout item by item used to hang the UI thread while a
+floating native window was closing; the suite now performs a deterministic layout reset at the start
+of the next item instead, and a 20 s action watchdog reports the action that is actually stuck.
 
-所有测试都由 TestApp 内的 20ms native-origin guard 记录 main window 首次位移，结束时统一断言
-全过程未移动。所有 floating→dock 的 mouse-down 前，不仅验证请求点、窗口和 z-order，还会读取
-真实 native cursor；最多慢速重发 5 次纯 move，只有 cursor 位于最新 floating title-bar handle
-内才允许按下。额外 warm-up click 已删除，点击之间仍按系统双击判定时间隔离；测试代码不调用
-任何截屏动作。4 个专门用例在 drop 前保存 live preview 屏幕矩形，drop 后读取实际承载 pane
-矩形，并以 2 px 容差比较位置和尺寸。
+Every test records the main window's first movement with a 20 ms native-origin guard inside TestApp
+and asserts at the end that it never moved. Before every floating->dock mouse-down the tests verify
+not only the requested point, the window and the z-order, but also read the real native cursor; up to
+five slow, move-only retries are allowed, and the press is allowed only when the cursor is inside the
+latest floating title-bar handle. The extra warm-up click is gone, clicks are still separated by the
+system double-click interval, and no test calls any screenshot action. Four dedicated cases save the
+live preview's screen rectangle before the drop, read the pane rectangle that actually hosts it
+afterwards, and compare position and size with a 2 px tolerance.
 
-2026-08-08 最终刷新验证：local feed 的正式目录只保留 3 个有效包，历史包移到
-`artifacts/local-feed-backups`；LibreWPF Release、NuGet cache 和 TestApp 输出中的
-`ProGPU.Wpf.dll` SHA-256 均为 `9f0e7585470d07f145ac1d9812552db43174cb81f44f3f569263f3626a6be1b6`。
-完整集成测试 57/57 通过（8m42s）。
+Final verification after the 2026-08-08 refresh: the local feed's official directory holds only the
+three valid packages, historical packages moved to `artifacts/local-feed-backups`, and the SHA-256 of
+`ProGPU.Wpf.dll` in the LibreWPF Release build, the NuGet cache and the TestApp output is
+`9f0e7585470d07f145ac1d9812552db43174cb81f44f3f569263f3626a6be1b6`. The full integration suite
+passed 57/57 (8m42s).
 
-### 影响
+### Impact
 
-完整测试跑 22 个用例期间偶发触发 → TestApp 进程死亡 → 后续用例全部
-`DevFlow agent not reachable` 级联失败（一次实测：崩溃后 12 个用例级联失败）。
+Triggered occasionally while the full suite ran those 22 cases -> the TestApp process died -> every
+later case failed with `DevFlow agent not reachable` (in one measured run, 12 cases failed in a
+cascade after the crash).
 
-## 5. 崩溃 C：关闭后的 native drag tick 移动已释放 NSWindow
+## 5. Crash C: a native drag tick moved a released NSWindow after close
 
-### 崩溃栈与实证
+### Stack and evidence
 
-OpenDevelop 在 Error List 与 Project Browser 处于同一个异常 floating container 时切换
-`Plain → Default` layout，进程在主线程崩溃：
+OpenDevelop crashed on the main thread when switching layout `Plain -> Default` while the Error List
+and the Project Browser were in the same floating container:
 
 ```
 EXC_BAD_ACCESS / SIGSEGV
@@ -315,29 +378,33 @@ objc_msgSend
 selector: setFrameTopLeftPoint:
 ```
 
-这个 selector 只由 AvalonDock 的 `MacOSNativeWindowService.SetWindowPosition` 使用。对应调用方
-`LayoutFloatingWindowControl.OnPortableNativeDragTick` 是 16ms `DispatcherTimer`。关闭路径此前
-既没有停止这个 timer，也没有解除 macOS `LocationChanged`，所以 layout restore 销毁 native
-NSWindow 后，排队中的 tick 仍可能解析/使用旧 handle。Objective-C 向已释放 receiver 发送消息
-是进程级 access violation，托管 `try/catch` 无法防护。
+That selector is only used by AvalonDock's `MacOSNativeWindowService.SetWindowPosition`. Its caller,
+`LayoutFloatingWindowControl.OnPortableNativeDragTick`, is a 16 ms `DispatcherTimer`. The close path
+neither stopped that timer nor detached the macOS `LocationChanged` handler, so after a layout
+restore destroyed the native NSWindow a queued tick could still resolve and use the old handle.
+Sending an Objective-C message to a freed receiver is a process-level access violation that managed
+`try/catch` cannot guard.
 
-### 修复
+### Fix
 
-`LayoutFloatingWindowControl` 现在在 `OnClosing`（必须早于 backend 销毁 native window）统一：
+`LayoutFloatingWindowControl` now does all of this in `OnClosing` (which must run before the backend
+destroys the native window):
 
-- 停止 portable native drag timer；
-- 解除 `LocationChanged` 与全局 `PostProcessInput`；
-- 释放 mouse capture；
-- abort 并清空 `DragService`，复位 drag 状态。
+- stop the portable native drag timer;
+- detach `LocationChanged` and the global `PostProcessInput` handler;
+- release the mouse capture;
+- abort and clear the `DragService`, and reset the drag state.
 
-`OnClosed` 再幂等调用同一清理，覆盖非标准关闭路径。OpenDevelop 侧同时为 Error List 补上
-`PreferredDockSide.Bottom`，避免它在 layout XML 中缺席时落入 AvalonDock 的 floating fallback。
-Workbench 集成测试新增 Error List `isFloating == false`、`side == Bottom` 断言；完整 35/35 通过。
+`OnClosed` calls the same cleanup again, idempotently, to cover non-standard close paths. On the
+OpenDevelop side the Error List also gets `PreferredDockSide.Bottom`, so it no longer falls into
+AvalonDock's floating fallback when it is missing from the layout XML. The Workbench integration test
+gained assertions that the Error List has `isFloating == false` and `side == Bottom`; the full suite
+passed 35/35.
 
-## 6. LibreWPF 源码修改 → 本地 feed 替换流程
+## 6. LibreWPF source change -> local feed replacement
 
-TestApp 通过 `LibreWPF.Sdk` MSBuild SDK 消费包；本地源已在
-`OpenDevelop/NuGet.config` 配置：
+TestApp consumes packages through the `LibreWPF.Sdk` MSBuild SDK; the local source is configured in
+`OpenDevelop/NuGet.config`:
 
 ```xml
 <add key="librewpf-local" value="/Users/lextm/wpf-tools/librewpf/artifacts/local-feed" />
@@ -348,104 +415,415 @@ TestApp 通过 `LibreWPF.Sdk` MSBuild SDK 消费包；本地源已在
 </packageSource>
 ```
 
-**完整替换流程**（已验证可运行）：
+**Full replacement procedure** (verified working):
 
 ```bash
-# 1. 改源码：/Users/lextm/wpf-tools/librewpf/src/ProGPU.Wpf/...
-# 2. 构建（用仓库 pinned SDK）
+# 1. change the source: /Users/lextm/wpf-tools/librewpf/src/ProGPU.Wpf/...
+# 2. build (with the repository's pinned SDK)
 cd /Users/lextm/wpf-tools/librewpf
 export PATH="$PWD/.dotnet:$PATH"
 dotnet build src/ProGPU.Wpf/ProGPU.Wpf.csproj -c Release
-# 产物: src/ProGPU.Wpf/bin/Release/net10.0/ProGPU.Wpf.dll
+# output: src/ProGPU.Wpf/bin/Release/net10.0/ProGPU.Wpf.dll
 
-# 3. 解包 nupkg → 替换 dll → 重打包（zip）→ 覆盖 local-feed
+# 3. unpack the nupkg -> replace the dll -> repack (zip) -> overwrite the local feed
 mkdir -p /tmp/nupkg-work && cd /tmp/nupkg-work
 cp /Users/lextm/wpf-tools/librewpf/artifacts/local-feed/LibreWPF.ProGPU.0.1.0-preview.41.nupkg orig.nupkg
 unzip -o -q orig.nupkg -d extracted
-cp <新 ProGPU.Wpf.dll> extracted/lib/net10.0/ProGPU.Wpf.dll
+cp <new ProGPU.Wpf.dll> extracted/lib/net10.0/ProGPU.Wpf.dll
 cd extracted && rm -f ../LibreWPF.ProGPU.0.1.0-preview.41.nupkg \
   && zip -q -r -X ../LibreWPF.ProGPU.0.1.0-preview.41.nupkg .
-# 校验: unzip -p 新nupkg lib/net10.0/ProGPU.Wpf.dll | md5 == 新 dll md5
+# verify: unzip -p new.nupkg lib/net10.0/ProGPU.Wpf.dll | md5 == md5 of the new dll
 
-# 4. 备份 + 覆盖 feed + 清 NuGet 缓存
-cp local-feed/*.nupkg local-feed/*.myfix-backup   # 惯例：改名前先备份
+# 4. back up, overwrite the feed, clear the NuGet cache
+#    (step 3 left the shell in extracted/, so go back to the artifacts directory first; a single
+#    glob cannot be copied onto a glob, so the backup names one file)
+cd /Users/lextm/wpf-tools/librewpf/artifacts
+cp local-feed/LibreWPF.ProGPU.0.1.0-preview.41.nupkg \
+   local-feed/LibreWPF.ProGPU.0.1.0-preview.41.nupkg.myfix-backup
 cp /tmp/nupkg-work/LibreWPF.ProGPU.0.1.0-preview.41.nupkg local-feed/
 rm -rf ~/.nuget/packages/librewpf.progpu/0.1.0-preview.41
 
-# 5. 重建 TestApp 并核对 md5
+# 5. rebuild TestApp and compare md5
 dotnet build source/TestApp/TestApp.csproj -c Debug
-md5 -q source/TestApp/bin/Debug/net10.0-windows/ProGPU.Wpf.dll   # 必须等于新 dll
+md5 -q source/TestApp/bin/Debug/net10.0-windows/ProGPU.Wpf.dll   # must equal the new dll
 ```
 
-注意：`LibreWPF.Transport` 包打包的是**预构建**的 WPF DLL（PresentationCore/PresentationFramework），
-若修改了 `src/Microsoft.DotNet.Wpf` 下的代码，需先单独构建对应 csproj 再 pack 打包项目。
+Note: the `LibreWPF.Transport` package contains **prebuilt** WPF DLLs
+(PresentationCore/PresentationFramework). If code under `src/Microsoft.DotNet.Wpf` changed, build
+that csproj first and then pack the packaging project.
 
-## 6. 诊断工具清单
+## 7. Diagnostic tools
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |---|---|
-| `avd.query.drag-state` | 拖拽中实时状态：`currentDropTarget`、`previewGeometryBounds`（当前真实 preview 的屏幕坐标）、`overlayLeft/Top`（overlay 是否创建）、`left/top`（浮动窗位置）、`currentPointer`、`dragOffset` |
-| `avd.query.active-drop-targets` | compass 当前指示器列表（type + 屏幕中心） |
-| `avd.input.query` | TestApp 鼠标诊断：`leftButton`（是否 Pressed）、`mouseX/Y`、`captured` |
-| `avd.debug-show-overlay <zone>` | 强制显示 overlay + 返回 `previewGeometryBounds`（**屏幕坐标**，与 dock 后 pane 对比） |
-| `drag-diag4.sh`（会话临时脚本） | 20 次循环复现 flake，失败时打印 drag-state 现场 |
-| `~/.nuget/packages/...` 与 `local-feed` | 包版本/替换核验（md5 对比） |
-| `~/Library/Logs/DiagnosticReports/TestApp-*.ips` | 崩溃报告（`python3 -c` 解析 exception + triggered thread 栈） |
+| `avd.query.drag-state` | Live drag state: `currentDropTarget`, `previewGeometryBounds` (screen rect of the current real preview), `overlayLeft/Top` (whether the overlay was created), `left/top` (floating window position), `currentPointer`, `dragOffset` |
+| `avd.query.active-drop-targets` | The compass indicators currently shown (type + screen centre) |
+| `avd.input.query` | TestApp mouse diagnostics: `leftButton` (Pressed or not), `mouseX/Y`, `captured` |
+| `avd.debug-show-overlay <zone>` | Force the overlay on and return `previewGeometryBounds` (**screen** coordinates, for comparison with the pane after docking) |
+| `drag-diag4.sh` (temporary session script) | Reproduce the flake 20 times, printing the drag-state on failure |
+| `~/.nuget/packages/...` and `local-feed` | Package version/replacement verification (md5 comparison) |
+| `~/Library/Logs/DiagnosticReports/TestApp-*.ips` | Crash reports (`python3 -c` to extract the exception and the triggered thread's stack) |
 
-**失败判读口诀**：
-- `overlayLeft: null` + 浮动窗移动过 → 子模式 A（tick 跑但 `UpdateMouseLocation` 未命中 host）；
-- 浮动窗没动 + `leftBtn=Released` → 子模式 B（cliclick `dd` 未到达 WPF，激活消耗）；
-- 用例 4ms 秒失败 + `not reachable` → 上一步 TestApp 崩溃级联（查 .ips）。
+**How to read a failure:**
 
-## 7. 当前状态与遗留问题
+- `overlayLeft: null` and the floating window moved -> sub-mode A (the tick runs but
+  `UpdateMouseLocation` never matches a host);
+- the floating window did not move and `leftBtn=Released` -> sub-mode B (cliclick's `dd` never reached
+  WPF, consumed by activation);
+- the case fails within 4 ms with `not reachable` -> the previous step's TestApp crash cascading
+  (check the .ips).
 
-**已生效修复**（全部通过完整测试验证）：
-1. `LayoutFloatingWindowControl.cs`（AvalonDock）：watchdog 宽限期 500ms —— flake 率 1-2 → 0-1。
-2. `DockingManager.cs`（AvalonDock）：`GetOverlayWindowHostsByZOrder` 异常 fallback（防御）。
-3. `SilkNetWpfInputService.cs`（LibreWPF，dll 已替换到 local-feed）：mouseUp 不因 down 缺失而丢弃。
-4. 测试改进：`DockPreview_MatchesDockedPaneGeometry` 在真实拖拽按住、目标已命中但尚未
-   release 时，从 `avd.query.drag-state` 记录 preview 屏幕矩形；drop 完成后再读取实际 pane，
-   比较两者尺寸和位置（容差 2px）。
-5. native-input 安全门禁：native cursor + GLFW frame + native z-order 全部正确才允许 mouse-down；
-   错误坐标直接失败，不再拖拽主窗口、桌面或 macOS 系统部件。
-6. 删除额外 discovery drag；overlay 完成布局后直接提供全部 indicator bounds；zone 测试的
-   drop 确定性完成，真实 mouse-up 由专门用例覆盖。
-7. 完整 `DropTargetZoneIntegrationTests`：**22/22 通过，4 分 40 秒**；运行中无截图动作。
+## 8. Status and open issues (2026-08)
 
-**遗留**：
-- 产品层首次点击语义：测试已规避非 key window 吞 `dd`，但真实应用仍应验证/实现 GLFW Cocoa
-  `acceptsFirstMouse`，不能把测试规避当作产品修复；
-- 崩溃 A（GLFW observer 悬垂）：本轮最终 22/22 未复现，但已有确定 native 栈，仍需 GLFW
-  替换版本 A/B 才能关闭；
-- 崩溃 B（CUIThemeFacet CAPackage 解码）：本轮修复过程中多次复现，是当前最高优先级稳定性问题；
-  最终 22/22 只证明降低窗口/手势次数后该轮未触发，不能视为已修复。
+**Fixes in place** (all verified by the full suite):
 
-### 建议的后续研究顺序
+1. `LayoutFloatingWindowControl.cs` (AvalonDock): 500 ms watchdog grace period - flake rate 1-2 ->
+   0-1.
+2. `DockingManager.cs` (AvalonDock): `GetOverlayWindowHostsByZOrder` exception fallback (defensive).
+3. `SilkNetWpfInputService.cs` (LibreWPF, dll replaced in the local feed): mouseUp is no longer
+   dropped when its down is missing.
+4. Test improvement: `DockPreview_MatchesDockedPaneGeometry` records the preview's screen rectangle
+   from `avd.query.drag-state` while the real drag is held and the target is hit but not yet
+   released, then reads the actual pane after the drop and compares position and size (2 px
+   tolerance).
+5. native-input safety gates: a mouse-down is allowed only when the native cursor, the GLFW frame and
+   the native z-order are all correct; wrong coordinates now fail instead of dragging the main
+   window, the desktop or macOS system UI.
+6. The extra discovery drag is gone; the overlay publishes all indicator bounds after it has laid
+   out, and zone tests complete their drop deterministically while a dedicated case covers the real
+   mouse-up.
+7. Full `DropTargetZoneIntegrationTests`: **22/22 in 4m40s**, with no screenshot action during the
+   run.
 
-1. **先查崩溃 B**：做最小循环（float → dock → restore），分别关闭窗口材质/透明效果、复用而非
-   销毁 floating/overlay window、串行化关闭与重建，记录每组 100 次的崩溃率；同时给
-   `NSVisualEffectView` 创建、从父视图移除、native window dispose 加时间戳和对象地址。
-2. **再查崩溃 A**：固定同一 workload，仅替换 GLFW native（当前 3.4.0 vs 更新版本或带
-   observer 移除补丁的自编译版本），检查 `NSWindowDidResignKeyNotification` observer 的注册/
-   移除是否成对。若升级即消失，就把修复锁定在 native 依赖升级，不在 AvalonDock 绕过。
-3. **最后补产品行为**：验证 Cocoa `acceptsFirstMouse:` 后，回归真实用户首次按下拖拽；保留当前
-   测试安全门禁，因为它防的是坐标/z-order 错误，与 `acceptsFirstMouse` 是两类问题。
+**Open:**
 
-## 8. 历史：splitter-drag bug 三连修（旧版内容，仍有效）
+- product-level first-click semantics: the tests work around a non-key window swallowing `dd`, but a
+  real application should still verify/implement GLFW Cocoa `acceptsFirstMouse`; a test workaround is
+  not a product fix;
+- Crash A (dangling GLFW observer): did not reproduce in the final 22/22, but the native stack is
+  known and it needs a GLFW build A/B before it can be closed;
+- Crash B (CUIThemeFacet CAPackage decode): reproduced repeatedly during this round of fixes and is
+  the highest-priority stability problem; the final 22/22 only shows that fewer window/gesture cycles
+  kept it from triggering in that run, not that it is fixed.
 
-（原 librewpf.md 内容，2026-08 之前）hover 分割条时按左键拖动：光标回箭头、拖不动或只动一步、
-之后光标卡死。根因是 `LayoutGridControl.OnSplitterDragStarted` 在拖拽中途 `Show()` 透明 overlay
-`Window`（`ShowActivated=false`, `Owner=null`），在 LibreWPF 便携后端产生三个独立破坏：
-phantom MouseUp、`Mouse.Synchronize()` 的 `(0,0)` 瞬移、`Window.HandlePortableMove` 释放捕获。
-三处修复均在 librewpf 仓库：
+### Suggested order of further investigation
 
-| # | 文件 | 修改 |
-|---|------|------|
-| 1 | `src/ProGPU.Wpf/ProGpuWpfWindowHost.cs` | 吞掉 show 后无 intervening move 的幽灵 MouseUp + GLFW 鼠标穿透；`NormalizeInputEventForRenderSurfaceGeometry` 对退化 scale 透传事件 |
-| 2 | `src/Microsoft.DotNet.Wpf/src/PresentationCore/.../MouseDevice.cs` | `Synchronize()` 在 `Captured != null` 时提前返回 |
-| 3 | `src/Microsoft.DotNet.Wpf/src/PresentationFramework/.../Window.cs` | `HandlePortableMove` 在鼠标按钮物理按下时跳过 `Mouse.Capture(null)` |
+1. **Crash B first**: build the smallest loop (float -> dock -> restore), turn the window material /
+   transparency off, reuse instead of destroy the floating/overlay windows, serialise close and
+   recreate, and record the crash rate for 100 iterations per configuration; add timestamps and
+   object addresses to `NSVisualEffectView` creation, removal from its parent, and native window
+   dispose.
+2. **Then Crash A**: keep the same workload and replace only the GLFW native build (current 3.4.0 vs a
+   newer version, or a self-built build with an observer-removal patch), and check whether the
+   `NSWindowDidResignKeyNotification` observer's registration and removal are paired. If an upgrade
+   makes it disappear, pin the fix to the native dependency upgrade instead of working around it in
+   AvalonDock.
+3. **Then the product behaviour**: after verifying Cocoa `acceptsFirstMouse:`, regress a real user's
+   first click-and-drag; keep the current test safety gates, because they guard against wrong
+   coordinates/z-order, which is a different class of problem from `acceptsFirstMouse`.
 
-修复 2/3 进 `LibreWPF.Transport`，修复 1 进 `LibreWPF.ProGPU`。
-验证 harness：`/Users/lextm/uno-tools/tooltiptest`（`TOOLTIPTEST_SPLITTER_MODE=1`、
-`scripts/check-splitter-capture.sh` → `SPLIT_RESULT: PASS`）。重打包注意：Transport 打包
-预构建 WPF DLL，需先 `dotnet build` 对应 csproj 再 pack。
+## 9. 2026-10: replacing the FlaUI tests with DevFlow (in progress)
+
+### Goal
+
+`source/AutomationTest/AvalonDockTest/FlaUI` held **92 UI test cases in 17 files** (18 fixtures; the
+two base classes hold none) that only ran on Windows, through FlaUI/UIA. They are being replaced by
+DevFlow suites that launch the same sample applications and drive them over the in-process DevFlow
+agent, so **one suite** runs on:
+
+| Leg | Runner | Backend |
+|---|---|---|
+| windows-x64 | windows-2025 | real WPF |
+| windows-arm64 | windows-11-arm | real WPF |
+| macos-arm64 | macos-15 | LibreWPF (CoreGraphics/AppKit), cliclick for native input |
+| linux-x64 | ubuntu-24.04 | LibreWPF on Xvfb + openbox, XTest for native input |
+| linux-arm64 | ubuntu-24.04-arm | same as linux-x64 |
+
+When the port finishes the suite is 57 existing DevFlow cases + 92 ported = **149 cases**. The 57
+existing cases already prove the infrastructure is cross-platform (agent, fixtures, two ports, real
+pointer injection, ProGPU backend); they do not prove the FlaUI coverage has moved.
+
+### Done
+
+**Infrastructure (committed):**
+
+- `.github/workflows/ci.yml` gained the five-legged `devflow` matrix (the Windows legs also run the
+  ordinary unit tests in a separate job); `release.yml` validates on windows-x64, macos-arm64 and
+  linux-x64 and replaces same-version packages instead of failing on them.
+- The two sample applications each have their own agent and port: `TestApp` on **9223**
+  (`[Collection("DevFlow")]`, `TestAppFixture`) and `AvalonDockCodeApp` on **9224**
+  (`[Collection("DevFlowCodeApp")]`, `CodeAppFixture`). The port is a property of the suite, not a
+  process-wide static, so a ToggleDock suite cannot connect to the wrong application.
+- The DevFlow action surface grew to cover what the ported cases need: menus as a tree
+  (`avd.menu.items`/`invoke`/`close`), tab right-clicks (`avd.tab.right-click`), invoking an entry of
+  a tab's context menu (`avd.context.invoke`), window geometry (`avd.query.window`,
+  `avd.window.resize`), a dialog seam (`avd.dialogs.answer`/`query`), documents
+  (`avd.document.add-two`/`activate`, `avd.content`, `avd.close-content`), floating windows
+  (`avd.close-floating`), focus and input (`avd.focus.query`/`set`, `avd.input.key`/`text`), and
+  auto-hide state (`avd.query.autohide`, `avd.query.bounds autohide-tab`).
+
+**Ported suites (61 of 92 cases, committed):**
+
+| Suite | Cases | Batch |
+|---|---:|---|
+| `SmokeTests` | 8 | 1 |
+| `ContextMenuTests` | 5 | 1 |
+| `DocumentTabTests` | 6 | 1 |
+| `KeyboardNavigationTests` | 4 | 1 |
+| `ToolWindowTests` | 7 | 2 |
+| `ToolWindowVisibilityTests` | 6 | 2 |
+| `FloatingWindowTests` | 4 | 2 |
+| `FloatingWindowCloseTests` | 1 | 2 |
+| `DocumentLifecycleTests` | 5 | 2 |
+| `LayoutSerializationTests` | 6 | 3 |
+| `LayoutSerializationExtendedTests` | 5 | 3 |
+| `ManagerLifecycleTests` | 4 | 3 |
+
+Method names and `IssueNNN` suffixes are kept, so a failure still names the regression it did
+before. Assertions the original spec marks as vacuous are replaced by the behaviour: "the app has not
+exited" after a tab click becomes "that tab is now active"; tool-window content is read from that tool
+window instead of counting edit controls in the whole window; the auto-hide strip is checked to sit on
+the window's left edge rather than "left of the midline"; three flyout round trips are timed; "New
+floating window" must add exactly one window (#254's duplicate was invisible to "at least one"); a
+layout restore must remove what was added after the save; #437 (never actually unloaded in FlaUI) now
+unloads the manager with a floating window open.
+
+### Decisions worth keeping
+
+- **Per-test restart.** The FlaUI fixtures shared one application and relied on NUnit `[Order]` for a
+  predictable starting state. Each ported test now starts a fresh process (`PortedTestAppTestBase`
+  overrides `InitializeAsync`): the XAML layout is only rebuilt at startup, and the older suites in
+  the same collection deliberately replace the layout with their drag fixtures.
+- **Dialogs as a seam.** A headless runner cannot click a modal `MessageBox`, so the sample's two
+  confirmations (`DocumentClosing`, `ToolWindow1.Hiding`) go through `AskYesNo`, which records every
+  question and answers from `avd.dialogs.answer` (yes/no/ask). Tests assert the recorded question
+  instead of looking for a `#32770` window.
+- **System close without Win32.** `avd.close-floating` calls `Window.Close()` on the floating control
+  - the path a window manager's close button ends in - instead of posting
+  `WM_SYSCOMMAND`/`SC_CLOSE`.
+- **Keyboard limitation.** The agent can insert text into a control on all three platforms, but it
+  cannot hold a modifier or press an arrow key (Linux injects one keysym, macOS goes through
+  cliclick, Windows through SendInput; none implements chords). Gestures are raised as WPF routed
+  input on the focused element, and the assertions are on focus and liveness.
+- **The action surface is static.** This is the important discovery of the port: the LibreWPF agent
+  resolves an action either as a static method or as an instance method of a window (it enumerates
+  `Application.Current.Windows`), but the **WPF agent implements only the static half** - both
+  `GetInvokeActionTargetsAsync` and `DispatchOnUIThreadAsync` sit inside `#if LIBREWPF` in
+  `WpfAgentService`. On real WPF every `avd.*` action declared on `MainWindow` was therefore
+  discovered and then dropped for lack of a target, and nothing marshalled it to the UI thread
+  either. Both samples now expose their actions as static forwarders (`MainWindow.DevFlowActions.cs`)
+  that resolve the window and call the implementation inside the application's dispatcher, carrying
+  any exception out with `ExceptionDispatchInfo` so the agent reports a failed action instead of the
+  process dying on the UI thread. This is a DevFlow package limitation (0.3.1 is the latest
+  published); the samples work around it rather than depending on a private feed.
+
+### CI evidence
+
+| Run | Commit | Result |
+|---|---|---|
+| 40465720089 | `810bc87` | 57 cases. linux-x64 and linux-arm64 green (57/57); both Windows legs failed all 57 before the first assertion (`dotnet not found`: the fixture scanned PATH for `dotnet` instead of `dotnet.exe`); macOS 55/57 - the two native-drag cases failed (`DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane`) |
+| 40466622281 | `d6f8a2a` | 57 cases. Windows now launches the app, and all 57 fail with `404 avd.position-main-window`: the agent was up but none of the sample's instance actions existed (the finding above) |
+| 40469049093 | `e35dfc3` | 80 cases (57 + batch 1). linux-x64 76/80: `avd.input.key` hit `EntryPointNotFoundException: GetKeyState in user32.dll` in the floating-window arrow case, the Edit menu's command-bound items reported `isEnabled=true` where the port expected false, and both right-click cases found no tab because an earlier suite had replaced the layout (the per-test restart was not in this commit). Windows: all 80 `agent not reachable` - an action exception escaping the dispatcher killed the process. macOS 72/80 (the same two native-drag cases plus four smoke cases that inherited a mutated layout) |
+| 40469822693 | `43c0fae` | 103 cases (57 + batches 1-2). linux-x64 90/103; the failures are the current work list, see below |
+
+### Windows ARM64: why it was slow (2026-10-27)
+
+Run 40469049093 (80 cases): linux-x64 5m54s, linux-arm64 6m09s, macOS 10m43s, windows-arm64
+**27m25s** (38 passed / 38 failed / 4 skipped). windows-x64 finished in 6m26s only because all 80
+cases failed instantly (the dispatcher crash cascade); once the app really runs, x64 and arm64 are
+the same case. The Windows arm64 job's build step is as fast as the others (~1 min), so the time
+was spent in the test step: the four skipped native-input cases are spaced exactly 10.2 s apart in
+the log, and a skip does no work of its own - that spacing is the per-test restart.
+
+Cause: `DevFlowAppFixture` started the sample with `dotnet run --no-build --project ...`. `--no-build`
+still evaluates the whole project (SDK resolution for the 11 preview SDK, the `LibreWPF.Sdk` targets,
+restore assets) before launching, about 10 s on a `windows-11-arm` runner, and the per-test restart
+introduced for the ported suites pays it 80+ times. Fix: when `DEVFLOW_TESTAPP_NO_BUILD=1` and
+`bin/Debug/net10.0-windows/<project>.dll` exists, the fixture runs `dotnet <project>.dll` from that
+folder (falling back to `dotnet run`). This also shortens every other leg.
+
+Second cause: the legacy drag cases (`DragDropFeatureIntegrationTests`, `DropTargetZone...`) spent
+26-33 s each and then failed with `501 Drag is not supported by this agent`. A 501 means the agent
+build has no such pointer primitive, which is a platform limitation, so `DevFlowClient` now reports
+it as a skip instead of a failure.
+
+### 2026-10-27 findings: the 21 s per test on Windows was `localhost`
+
+After the direct launch (`98d92e9`) a trivial SmokeTests case still took **21.0 s on Windows ARM64
+and 4.8 s on Linux x64**, with the same duration for every test. A constant per-test cost that does
+not depend on what the test does pointed at the transport, not at the application: the client and
+the fixture's readiness probe used `http://localhost:9223`, which Windows resolves to `::1` first;
+the agent listens on IPv4 only (`127.0.0.1`, checked with `lsof` on macOS), so every new connection
+paid a refused-then-fallback round. `3161c2e` switched both to `127.0.0.1` and a Smoke case now takes
+**3.4 s** on windows-arm64. A full Windows leg went from 48 min to 4-5 min. Two CI changes made this
+measurable: `plan` + `legs`/`test_args` dispatch inputs (re-run one platform or one class,
+for example `-f legs=windows-arm64 -f test_args="--filter-class AvalonDock.DevFlowIntegrationTests.SmokeTests"`),
+and application logs copied into `TestResults/` (the Windows `upload-artifact` step used to fail with
+"rootDirectory is not a parent directory" and dropped every Windows artifact).
+
+Where a full run stood after that (run 40495108583, 118 cases): linux-x64 and linux-arm64 108/118,
+macos-arm64 106/118, windows 71-74 passing. The ten failures shared by the three LibreWPF legs:
+the four auto-hide flyout cases, `ClickToolWindowTab_ActivatesIt_Issue375`,
+`ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` (a click on a
+*tool-window* tab does not activate it, while clicks on document tabs do), the 10x10 floating window
+(#174), the "Window" context-menu detach, and the floating window surviving `avd.close-floating`.
+`TestApp` declares `DockWidth="50"` for Tool Window 1's pane, so the tab is a 9x14 target there; tool tabs activate on
+mouse *up* (`LayoutAnchorableTabItem.OnMouseLeftButtonUp`) while document tabs activate on mouse down.
+Windows adds one real defect: the sample process dies when a floating window is created and every
+later case reports `agent not reachable`. The log is now appended across restarts and the fixture
+records the exit code, and `ClickAsync` writes the hit-test and the input counters to stderr, so the
+next run says which of these it is.
+
+### State on 2026-10-27 (run 40511892900, commit `78575cd`)
+
+| Leg | Passed | Failed | Skipped | Duration |
+|---|---:|---:|---:|---:|
+| windows-x64 | 79 | 0 | 39 | 6.7 min |
+| windows-arm64 | 79 | 0 | 39 | 5.0 min |
+| linux-x64 | 110 | 8 | 0 | 12.6 min |
+| linux-arm64 | 110 | 8 | 0 | 12.1 min |
+| macos-arm64 | 108 | 10 | 0 | 16.0 min |
+
+The Windows skips are the native-drag cases: real WPF has no held-drag primitive in the agent
+(cliclick on macOS and XTest on Linux are the only ones), and a 501 from the agent is a skip.
+
+Fixed on the way there (each commit went through the OpenCode reviewer and build agents):
+
+- **Windows stack overflow** (`8b2877b`): on real WPF `GetNativeWindowOrigin` called
+  `PointToScreenPortable`, which for a `LayoutFloatingWindowControl` called `GetNativeWindowOrigin`
+  again. The process died with `0xC00000FD` the first time a floating window's caption handle was
+  queried, and every later case reported `agent not reachable`. The fixture now logs the exit code of
+  every instance, which is how this was found.
+- **System close** (`86805f7`, `78575cd`): `avd.close-floating` called `Window.Close()`, which only
+  hides the native window. The #368 fix lives in the `WM_CLOSE` handler, which runs
+  `HideWindowCommand`; the action now does the same. The model keeps the emptied floating window (it
+  is what the tool window is re-shown into), so the case waits for the tool window to stop floating.
+- **"Window" mode** (`86805f7`): the `Window` context-menu entry detaches the anchorable into a
+  standalone `DetachedAnchorableWindow`, which is not a floating window. The layout query now
+  reports `detachedContentIds`, and closing a detached window reattaches it.
+- **Auto-hide bounds** (`2f4056c`): the side auto-hide tabs are under a 90 degree
+  `LayoutTransform`, so the (0,0)-(w,h) diagonal gave a negative width; bounds now come from all four
+  corners.
+- **Narrow pane** (`78575cd`): Tool Window 1's pane is declared `DockWidth="50"`, so its tab is a
+  9 px sliver. Tests widen it through `avd.pane.set-width` before clicking a tool tab.
+- Smaller ones: JSON results from `avd.activate-floating` and `avd.close-content`,
+  `KeyboardFocusChangedEventArgs` in `avd.menu.close` (plain `RoutedEventArgs` threw on WPF), unload
+  detection, and `EnsureDecomposedInputAvailable` for the drop-zone theories.
+
+#### Known LibreWPF gaps (skipped on LibreWPF, see `KnownLibreWpfGaps`)
+
+These pass on real WPF. Every diagnostic so far points at the backend, not at AvalonDock or at the
+test, so they are skipped on LibreWPF with the reason in the skip message;
+`DEVFLOW_RUN_KNOWN_GAPS=1` runs them anyway, which is how a LibreWPF fix should be checked.
+
+| Gap | Cases | Evidence |
+|---|---|---|
+| Auto-hide click | `ClickAutoHideTab_OpensFlyout_Issue169`, `AutoHideWithTextBoxes_ContentAccessible_Issue62`, `AutoHideFlyout_IsResponsive_Issue10`, `SaveLoadLayout_WithAutoHidePanels_Issue111` | The click lands on the right anchor (`hitContentTitle` = `AutoHide1 Content`), down and up both arrive, `lastDownHandled=false`, `Mouse.DirectlyOver` is the anchor's `Border`; `LayoutAnchorControl.OnMouseDown` should then call `ShowAutoHideWindow`, but `avd.query.autohide` never reports the flyout open. Next step: trace `AutoHideWindowManager.ShowAutoHideWindow` and the close timer (`IsWin32MouseOver` on LibreWPF) |
+| Tool tab click | `ClickToolWindowTab_ActivatesIt_Issue375`, `ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` | Even with the pane widened to 300, the centre of Tool Window 1's tab header (as `TransformToAncestor` reports it) hit-tests to `Tool Window 2`, and that is what activates. The anchorable tab panel is arranged differently from WPF |
+| Floating size to content (#174) | `FloatingWindow_HasReasonableSize_Issue174` | `managedWidth/Height` 25x25, native frame 10x10, five seconds after creation; the content declares 300x300 minimums and `AutoWindowSizeWhenOpened` is on |
+| macOS native drag | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` (macOS only) | Failed on the macOS runner in every run since the matrix was added (the overlay never appears, the resizer never moves); Linux runs the same cases green through XTest |
+
+### Work list from the earlier runs
+
+Committed 2026-10-27 through the OpenCode reviewer/build flow (reviewer and build agents on
+`opencode-go/deepseek-v4.1-flash`): `41cd8ad` (the items below) and `98d92e9` (the two speed fixes).
+Run 40477750121 is the first run with them.
+
+The working tree holds the fixes for the 40469049093/40469822693 failures, built locally but **not
+committed**:
+
+- `PortedTestAppTestBase.InitializeAsync` restarts the application before every test, and the
+  per-suite `RestartAppAsync()` calls are gone (this is what fixes the four macOS smoke failures and
+  the two "no tab titled ..." failures, which were layout state leaking from the older suites);
+- `OnUi` in both samples carries an action's exception out of the dispatcher with
+  `ExceptionDispatchInfo`, so a failing action is reported as a 400 instead of killing the process
+  on the UI thread (this is the Windows `agent not reachable` cascade);
+- `avd.input.key` reports backend limitations (`EntryPointNotFoundException`,
+  `DllNotFoundException`, `PlatformNotSupportedException`) in its payload and lets everything else
+  escape (this is the Linux `GetKeyState in user32.dll` failure);
+- `DevFlowAppFixture` writes the application log to `RUNNER_TEMP`, which is the only directory the
+  CI job collects on every runner;
+- `ContextMenuTests.EditMenu_OpensAndCloses` asserts that the five entries are command-bound instead
+  of asserting a particular enabled state.
+
+Open defects found by the 103-case run, still open:
+
+1. `autohide-tab` bounds come back with a **negative width** (`x:74, width:-24`), so
+   `QueryBoundsAsync` rejects them as empty and four auto-hide cases fail. The `LayoutAnchorControl`
+   screen rect needs the same native-origin treatment the floating windows got (section 4); the
+   vertical strip's transform is inverted on LibreWPF.
+2. `avd.content`, `avd.close-content` and `avd.close-floating` return plain strings on their
+   "not found / cannot close" paths while the tests parse JSON; the failures surface as
+   `JsonReaderException: 'A' is an invalid start of a value`.
+3. `FloatingWindow_HasReasonableSize_Issue174`: the window created by `Tools > New floating window`
+   measures **10x10** on Linux, so either the query reads the window before it has been laid out or
+   #174 is back.
+4. `ClickToolWindowTab_ActivatesIt_Issue375` / `ToolWindowContent_IsAccessible`: a click on the
+   `Tool Window 1` tab does not make it the active content (the pane is only ~50 px wide, so the
+   centre may land on the neighbouring tab).
+5. `FloatingToolWindow_SystemClose_CanBeReshown_Issue368`: the floating window survives
+   `avd.close-floating`.
+
+Two review passes over the uncommitted change set (the local `claude` CLI, model
+`claude-sonnet-5-5` at low effort) found no blockers.
+The first pass's items are addressed; three should-fix items from the second pass are **still open**:
+
+- (fixed in `41cd8ad`) the three keyboard cases share `AssertNoAppError`, which tolerates the three
+  backend-limitation exceptions; `EditMenu_OpensAndCloses` now asserts every item is command-bound and
+  reports `isEnabled`, with the comment corrected. The OpenCode reviewer approved this tree.
+
+### Remaining porting work
+
+| Suite | Cases | Fixture |
+|---|---:|---|
+| `DetachedWindowTests` | 7 | TestApp (9223) |
+| `StressTests` | 7 | TestApp |
+| `ToggleDockTests` | 11 | AvalonDockCodeApp (9224) |
+| `ToggleDockSerializationTests` | 4 | AvalonDockCodeApp |
+| `ToggleDockShortcutTests` | 2 | AvalonDockCodeApp |
+
+After that: delete `source/AutomationTest/AvalonDockTest/FlaUI`, the `Category=FlaUI` CI step and the
+FlaUI package references, drop the `Category!=FlaUI` filter (also in `release.yml`), and re-run the
+five legs.
+
+### Running the suite
+
+```bash
+# host under test (Debug) - also deploys the sample applications
+dotnet build source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj -c Debug
+
+# everything, one process per fixture
+dotnet run --project source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj -- \
+  --parallel none
+
+# one suite
+dotnet run --project source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj -- \
+  -class AvalonDock.DevFlowIntegrationTests.ToolWindowTests -parallel none
+```
+
+The local build needs `global.json` pinned to `11.0.100-rc.1.26425.128` and the GitHub Packages
+credentials for `openavalon-github` in the environment; restore `global.json` afterwards. Do not
+inject native input into a developer's desktop for these suites - the native-input cases assume the
+application owns the pointer and are verified in CI.
+
+## 10. History: the splitter-drag triple fix (older content, still valid)
+
+(Original `librewpf.md` content, before 2026-08.) Dragging a splitter with the left button held made
+the cursor revert to an arrow, the drag fail or move only one step, and the cursor then stick. The
+root cause was that `LayoutGridControl.OnSplitterDragStarted` calls `Show()` on a transparent overlay
+`Window` (`ShowActivated=false`, `Owner=null`) in the middle of the drag, which produced three
+independent breakages on the LibreWPF portable backend: a phantom MouseUp, a `(0,0)` jump from
+`Mouse.Synchronize()`, and `Window.HandlePortableMove` releasing the capture. All three fixes are in
+the librewpf repository:
+
+| # | File | Change |
+|---|------|--------|
+| 1 | `src/ProGPU.Wpf/ProGpuWpfWindowHost.cs` | swallow the phantom MouseUp that follows a show with no intervening move, plus GLFW mouse pass-through; `NormalizeInputEventForRenderSurfaceGeometry` forwards events for degenerate scales |
+| 2 | `src/Microsoft.DotNet.Wpf/src/PresentationCore/.../MouseDevice.cs` | `Synchronize()` returns early while `Captured != null` |
+| 3 | `src/Microsoft.DotNet.Wpf/src/PresentationFramework/.../Window.cs` | `HandlePortableMove` skips `Mouse.Capture(null)` while the mouse button is physically down |
+
+Fixes 2 and 3 ship in `LibreWPF.Transport`, fix 1 in `LibreWPF.ProGPU`.
+
+Verification harness: `/Users/lextm/uno-tools/tooltiptest` (`TOOLTIPTEST_SPLITTER_MODE=1`,
+`scripts/check-splitter-capture.sh` -> `SPLIT_RESULT: PASS`). Repackaging note: Transport packages
+prebuilt WPF DLLs, so build the matching csproj before packing.

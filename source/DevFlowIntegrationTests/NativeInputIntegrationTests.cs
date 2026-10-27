@@ -155,6 +155,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task DragDockedPaneResizer_ResizesToolPane()
 		{
+			KnownLibreWpfGaps.SkipOnMacOS(KnownLibreWpfGaps.MacNativeDrag);
+
 			NativeInputEnvironment.EnsureDecomposedInputAvailable();
 			await IsolateDesktopForNativeInputAsync();
 
@@ -253,6 +255,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout()
 		{
+			KnownLibreWpfGaps.SkipOnMacOS(KnownLibreWpfGaps.MacNativeDrag);
+
 			NativeInputEnvironment.EnsureDecomposedInputAvailable();
 			await IsolateDesktopForNativeInputAsync();
 
