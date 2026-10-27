@@ -255,6 +255,12 @@ namespace AvalonDock.Controls
 				Width = 0,
 				Height = 0,
 			});
+#if LIBREWPF
+			{
+				var parentSrc = HwndSource.FromHwnd(hwndParent.Handle);
+				System.Console.Error.WriteLine($"[HWND-TRACE] autohide BuildWindowCore parent=0x{hwndParent.Handle.ToInt64():X} parentVisible={Win32Helper.IsWindowVisible(hwndParent.Handle)} FromHwnd={parentSrc?.GetType().Name} childHandle=0x{_internalHwndSource.Handle.ToInt64():X} lastError={System.Runtime.InteropServices.Marshal.GetLastWin32Error()} childParent=0x{(_internalHwndSource.Handle != System.IntPtr.Zero ? Win32Helper.GetParent(_internalHwndSource.Handle).ToInt64() : 0):X} presenterHasVisualParent={System.Windows.Media.VisualTreeHelper.GetParent(_internalHostPresenter) != null} presenterLogicalParent={_internalHostPresenter.Parent?.GetType().Name}");
+			}
+#endif
 			AutomationProperties.SetName(_internalHostPresenter, "InternalWindowHost");
 
 			_internalHwndSource.RootVisual = _internalHostPresenter;
