@@ -13,12 +13,6 @@ namespace AvalonDock.Controls
 	{
 		private DockingManager _manager;
 
-		// Temporary diagnostics for the Linux preview-geometry investigation: the numbers behind the
-		// last preview rectangle, so a mismatching preview can be read against what produced it.
-		internal static string PreviewDiagnosticsForLastPreview { get; private set; }
-		internal static double PreviewInsetXForDiagnostics { get; private set; }
-		internal static double PreviewInsetYForDiagnostics { get; private set; }
-
 		/// <summary>
 		/// Initializes a new instance of the <see cref="DockingManagerDropTarget"/> class.
 		/// </summary>
@@ -217,8 +211,6 @@ namespace AvalonDock.Controls
 					var managerScreenOrigin = TargetElement.PointToScreen(new Point(0, 0));
 					var dx = contentScreenOrigin.X - managerScreenOrigin.X;
 					var dy = contentScreenOrigin.Y - managerScreenOrigin.Y;
-					PreviewInsetXForDiagnostics = dx;
-					PreviewInsetYForDiagnostics = dy;
 					if (dx > 0 || dy > 0)
 					{
 						targetScreenRect.X += dx;
@@ -264,30 +256,6 @@ namespace AvalonDock.Controls
 					targetScreenRect.Top - overlayWindow.Top + top,
 					width,
 					height);
-
-				PreviewDiagnosticsForLastPreview = string.Format(
-					System.Globalization.CultureInfo.InvariantCulture,
-					"type={0} inset={1:F1},{2:F1} area={3:F1},{4:F1} {5:F1}x{6:F1} preferred={7:F1} " +
-					"(dock={8} actual={9:F1} min={10:F1} floating={11:F1}) " +
-					"box={12:F1},{13:F1} {14:F1}x{15:F1} overlay={16:F1},{17:F1}",
-					Type,
-					PreviewInsetXForDiagnostics,
-					PreviewInsetYForDiagnostics,
-					targetScreenRect.X,
-					targetScreenRect.Y,
-					targetScreenRect.Width,
-					targetScreenRect.Height,
-					preferredSize,
-					dockSize,
-					actualSize,
-					minSize,
-					floatingSize,
-					previewBoxRect.X,
-					previewBoxRect.Y,
-					previewBoxRect.Width,
-					previewBoxRect.Height,
-					overlayWindow.Left,
-					overlayWindow.Top);
 
 				return new RectangleGeometry(previewBoxRect);
 			}

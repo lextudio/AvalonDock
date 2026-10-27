@@ -321,9 +321,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[DllImport("user32.dll")]
 		private static extern uint GetDoubleClickTime();
 
-		// Temporary diagnostics for the Linux preview-geometry investigation.
-		private static string LastPreviewDiagnostics;
-
 		private static ElementBounds ParsePreviewBounds(string dragState, string zoneType)
 		{
 			using var doc = JsonDocument.Parse(dragState);
@@ -334,11 +331,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 			Assert.True(floating.TryGetProperty("previewGeometryBounds", out var bounds)
 				&& bounds.ValueKind == JsonValueKind.Object,
 				$"Live preview for '{zoneType}' missing geometry before drop: {dragState}");
-
-			// Temporary diagnostics for the Linux preview-geometry investigation.
-			LastPreviewDiagnostics = floating.TryGetProperty("previewDiagnostics", out var previewDiagnostics)
-				? previewDiagnostics.GetString()
-				: null;
 
 			return new ElementBounds(
 				bounds.GetProperty("x").GetDouble(),
@@ -505,30 +497,15 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 				// Same screen position and same size as the preview captured from this exact held drag.
 				const double tolerance = 2.0;
-				var paneDiagnostics = await TryQueryRawBoundsAsync(client, "anchorable-pane", "dragTestTool");
-				var diagnostics = $" LastPreview={LastPreviewDiagnostics} PaneBounds={paneDiagnostics}";
 				Assert.True(Math.Abs(pane.X - capturedPreview.X) <= tolerance && Math.Abs(pane.Y - capturedPreview.Y) <= tolerance,
-					$"Docked pane position does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}" + diagnostics);
+					$"Docked pane position does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}");
 				Assert.True(Math.Abs(pane.Width - capturedPreview.Width) <= tolerance && Math.Abs(pane.Height - capturedPreview.Height) <= tolerance,
-					$"Docked pane size does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}" + diagnostics);
+					$"Docked pane size does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}");
 			}
 			finally
 			{
 				// The next theory row performs the deterministic reset; see the matching cleanup
 				// note in DragFloatingTool_OntoSpecificZone_DocksThere.
-			}
-		}
-
-		/// <summary>Temporary: raw avd.query.bounds payload for a target, or the error text.</summary>
-		private static async Task<string> TryQueryRawBoundsAsync(DevFlowClient client, string target, string contentId)
-		{
-			try
-			{
-				return await client.InvokeAsync("avd.query.bounds", target, contentId);
-			}
-			catch (Exception ex)
-			{
-				return $"{target} query failed: {ex.GetType().Name}: {ex.Message}";
 			}
 		}
 

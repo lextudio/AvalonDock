@@ -1240,66 +1240,7 @@ namespace TestApp
 				_ => null
 			};
 
-				var boundsPayload = CreateBoundsPayload(target, contentId, element);
-				if (element != null)
-					AppendDockModelDiagnostics(boundsPayload, element);
-
-				return System.Text.Json.JsonSerializer.Serialize(boundsPayload);
-			}
-
-			/// <summary>
-			/// Temporary diagnostics for the Linux preview-geometry investigation: what the model asks
-			/// for versus what the layout actually gives the queried pane, so a preview/pane mismatch
-			/// can be attributed to the model, the grid, or screen-coordinate scaling.
-			/// </summary>
-			private void AppendDockModelDiagnostics(Dictionary<string, object> payload, FrameworkElement element)
-			{
-				payload["logicalWidth"] = element.ActualWidth;
-				payload["logicalHeight"] = element.ActualHeight;
-				var presentationSource = PresentationSource.FromVisual(element);
-				payload["deviceScaleX"] = presentationSource?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-				payload["deviceScaleY"] = presentationSource?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-
-				if (element is ILayoutControl layoutControl)
-				{
-					payload["modelType"] = layoutControl.Model?.GetType().Name;
-					if (layoutControl.Model is ILayoutPositionableElement positionable)
-					{
-						payload["dockWidth"] = positionable.DockWidth.ToString();
-						payload["dockHeight"] = positionable.DockHeight.ToString();
-						payload["dockMinWidth"] = positionable.DockMinWidth;
-						payload["dockMinHeight"] = positionable.DockMinHeight;
-					}
-					if (layoutControl.Model is ILayoutElementForFloatingWindow floating)
-					{
-						payload["floatingWidth"] = floating.FloatingWidth;
-						payload["floatingHeight"] = floating.FloatingHeight;
-					}
-				}
-
-				if (element.Parent is LayoutPanelControl panel && panel.Orientation == Orientation.Horizontal)
-				{
-					var column = Grid.GetColumn(element);
-					if (column >= 0 && column < panel.ColumnDefinitions.Count)
-					{
-						var columnDefinition = panel.ColumnDefinitions[column];
-						payload["gridColumn"] = column;
-						payload["gridColumnWidth"] = columnDefinition.Width.ToString();
-						payload["gridColumnActualWidth"] = columnDefinition.ActualWidth;
-						payload["gridColumnMinWidth"] = columnDefinition.MinWidth;
-						payload["gridColumnCount"] = panel.ColumnDefinitions.Count;
-					}
-				}
-
-				if (ReferenceEquals(element, dockManager) && dockManager.Layout?.RootPanel != null)
-				{
-					payload["rootPanelChildren"] = dockManager.Layout.RootPanel.Children.Select(child => new Dictionary<string, object>
-					{
-						["type"] = child.GetType().Name,
-						["dockWidth"] = (child as ILayoutPositionableElement)?.DockWidth.ToString(),
-						["actualWidth"] = (child as ILayoutPositionableElementWithActualSize)?.ActualWidth,
-					}).ToArray();
-				}
+				return System.Text.Json.JsonSerializer.Serialize(CreateBoundsPayload(target, contentId, element));
 			}
 
 			[DevFlowAction("avd.query.drag-handle", Description = "Query a verified screen drag start point for an AvalonDock target")]
@@ -2132,17 +2073,8 @@ namespace TestApp
 					top = floatingOrigin.Y,
 					dragOffset = floating.PortableDragOffsetForDiagnostics,
 					currentPointer = floating.CurrentPointerScreenPosition,
-					// Temporary diagnostics for the Linux drag investigation.
-					windowLeft = floating.Left,
-					windowTop = floating.Top,
-					nativeOrigin = GetNativeWindowOrigin(floating),
-					dragUpdates = LayoutFloatingWindowControl.PortableDragUpdateCount,
-					dragRequest = LayoutFloatingWindowControl.PortableDragLastRequest,
 					nativeDrag = floating.PortableNativeDraggingForDiagnostics,
 					dragging = floating.PortableDraggingForDiagnostics,
-					timerEnabled = floating.PortableDragTimerEnabledForDiagnostics,
-					dragTrace = LayoutFloatingWindowControl.PortableDragTraceText,
-					previewDiagnostics = DockingManagerDropTarget.PreviewDiagnosticsForLastPreview,
 				};
 			}).ToArray());
 		}
