@@ -85,6 +85,7 @@ namespace AvalonDock.Controls
 		protected override void OnMouseDown(System.Windows.Input.MouseButtonEventArgs e)
 		{
 			base.OnMouseDown(e);
+			System.Console.Error.WriteLine($"[GAP-TRACE] AnchorControl.OnMouseDown handled={e.Handled} model={_model?.Title}");
 
 			if (!e.Handled)
 			{

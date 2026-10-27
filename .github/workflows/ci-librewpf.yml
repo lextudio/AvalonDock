@@ -17,6 +17,10 @@ on:
       test_args:
         description: 'Extra arguments for the DevFlow test executable, e.g. --filter-class AvalonDock.DevFlowIntegrationTests.SmokeTests'
         default: ''
+      run_known_gaps:
+        description: 'Run the cases skipped as known LibreWPF gaps (sets DEVFLOW_RUN_KNOWN_GAPS=1)'
+        type: boolean
+        default: false
 
 # A newer push supersedes a run that is still going; manual runs are never cancelled by it.
 concurrency:
@@ -251,6 +255,7 @@ jobs:
         env:
           DEVFLOW_TESTAPP_NO_BUILD: '1'
           TEST_ARGS: ${{ inputs.test_args }}
+          DEVFLOW_RUN_KNOWN_GAPS: ${{ inputs.run_known_gaps && '1' || '' }}
           # ProGPU renders through wgpu over GLFW, so the windowing environment has to look like a
           # real X11 desktop with software rendering. These are the settings LibreWPF's own
           # eng/progpu-wpf-linux-multi-window-smoke.sh uses - that harness opens several top-level
