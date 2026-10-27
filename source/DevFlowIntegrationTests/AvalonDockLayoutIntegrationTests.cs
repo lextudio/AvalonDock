@@ -8,7 +8,7 @@ using Xunit;
 namespace AvalonDock.DevFlowIntegrationTests
 {
 	[Collection("DevFlow")]
-	public sealed class AvalonDockLayoutIntegrationTests : IntegrationTestBase
+	public sealed class AvalonDockLayoutIntegrationTests : TestAppIntegrationTestBase
 	{
 		[Fact]
 		public async Task MacOSNativeViewTrees_IdentifySystemVisualEffectOwners()

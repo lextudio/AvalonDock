@@ -24,9 +24,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 	/// deterministic test layout never produces. See ZoneCases for the exact list driven here.
 	/// </summary>
 	[Collection("DevFlow")]
-	public sealed class DropTargetZoneIntegrationTests : IntegrationTestBase
+	public sealed class DropTargetZoneIntegrationTests : TestAppIntegrationTestBase
 	{
-		public DropTargetZoneIntegrationTests(DevFlowAppFixture fixture)
+		public DropTargetZoneIntegrationTests(TestAppFixture fixture)
 			: base(fixture)
 		{
 		}

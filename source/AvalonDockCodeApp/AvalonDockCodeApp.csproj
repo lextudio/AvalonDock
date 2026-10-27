@@ -37,6 +37,14 @@
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- The DevFlow agent (nuget.org) is what drives this app from the integration tests; it is a
+             sample-app dependency only, never part of the AvalonDock packages. The WPF and LibreWPF
+             agents differ in their native input implementation, so pick by host OS like TestApp. -->
+        <PackageReference Include="LeXtudio.DevFlow.Agent.Wpf" Version="0.3.1" Condition="'$(OS)' == 'Windows_NT'" />
+        <PackageReference Include="LeXtudio.DevFlow.Agent.LibreWpf" Version="0.3.1" Condition="'$(OS)' != 'Windows_NT'" />
+        <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
+    </ItemGroup>
 	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Condition="'$(OS)' == 'Windows_NT'" />
 	<Import Project="Sdk.targets" Sdk="LibreWPF.Sdk" Condition="'$(OS)' != 'Windows_NT'" />
 </Project>

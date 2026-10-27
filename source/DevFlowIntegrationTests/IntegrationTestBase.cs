@@ -5,10 +5,20 @@ using Xunit;
 
 namespace AvalonDock.DevFlowIntegrationTests
 {
+	/// <summary>
+	/// Shared plumbing for suites that talk to a DevFlow agent: which port to connect to, and the
+	/// per-test window-position guard.
+	/// </summary>
+	/// <remarks>
+	/// The port is a property of the subclass, not a static: two suites run against two different
+	/// sample applications (TestApp on 9223, AvalonDockCodeApp on 9224), and a process-wide "the port"
+	/// would make whichever suite initialised first decide where every later suite connects.
+	/// </remarks>
 	public abstract class IntegrationTestBase : IAsyncLifetime
 	{
-		private static int? _fixturePort;
 		private readonly DevFlowAppFixture _fixture;
+
+		protected DevFlowAppFixture Fixture => _fixture;
 
 		protected IntegrationTestBase()
 		{
@@ -19,20 +29,19 @@ namespace AvalonDock.DevFlowIntegrationTests
 			_fixture = fixture;
 		}
 
-		internal static void SetFixturePort(int port) => _fixturePort = port;
+		/// <summary>The DevFlow port of the application this suite drives.</summary>
+		protected abstract int AgentPort { get; }
 
-		protected static async Task<DevFlowClient> TryConnectAsync()
+		protected DevFlowClient CreateClient() => new(AgentPort);
+
+		protected async Task<DevFlowClient> TryConnectAsync()
 		{
-			var port = _fixturePort ?? DevFlowClient.ResolvePortOrNull() ?? 9223;
-			var client = new DevFlowClient(port);
+			var client = CreateClient();
 			if (await client.IsReachableAsync())
 				return client;
 
 			client.Dispose();
-			if (_fixturePort.HasValue || DevFlowClient.ResolvePortOrNull().HasValue)
-				throw new System.InvalidOperationException($"DevFlow agent not reachable on port {port}.");
-
-			return null;
+			throw new InvalidOperationException($"DevFlow agent not reachable on port {AgentPort}.");
 		}
 
 		protected Task IsolateDesktopForNativeInputAsync()
@@ -43,17 +52,44 @@ namespace AvalonDock.DevFlowIntegrationTests
 			return _fixture.IsolateDesktopForNativeInputAsync();
 		}
 
+		public virtual ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+		public virtual ValueTask DisposeAsync() => ValueTask.CompletedTask;
+	}
+
+	/// <summary>
+	/// Base for suites that drive TestApp, which can be repositioned and restarted (the native-input
+	/// tests need both). AvalonDockCodeApp has no such actions, so that plumbing stays here.
+	/// </summary>
+	public abstract class TestAppIntegrationTestBase : IntegrationTestBase
+	{
+		private const int DefaultPort = 9223;
+
+		protected TestAppIntegrationTestBase()
+		{
+		}
+
+		protected TestAppIntegrationTestBase(DevFlowAppFixture fixture)
+			: base(fixture)
+		{
+		}
+
+		protected override int AgentPort =>
+			int.TryParse(Environment.GetEnvironmentVariable("DEVFLOW_TEST_PORT"), out var port) && port > 0
+				? port
+				: DefaultPort;
+
 		protected Task RestartTestAppAsync()
 		{
 			return RestartTestAppAndPositionGuardAsync();
 		}
 
-		public async ValueTask InitializeAsync()
+		public override async ValueTask InitializeAsync()
 		{
 			await PositionAndArmMainWindowGuardAsync();
 		}
 
-		public async ValueTask DisposeAsync()
+		public override async ValueTask DisposeAsync()
 		{
 			await AssertMainWindowDidNotMoveAsync();
 		}
@@ -61,26 +97,21 @@ namespace AvalonDock.DevFlowIntegrationTests
 		private async Task RestartTestAppAndPositionGuardAsync()
 		{
 			await AssertMainWindowDidNotMoveAsync();
-			if (_fixture != null)
-				await _fixture.RestartAsync();
+			if (Fixture != null)
+				await Fixture.RestartAsync();
 			await PositionAndArmMainWindowGuardAsync();
 		}
 
-		private static async Task PositionAndArmMainWindowGuardAsync()
+		private async Task PositionAndArmMainWindowGuardAsync()
 		{
 			using var client = await TryConnectAsync();
-			if (client == null)
-				return;
-
 			await client.InvokeAsync("avd.position-main-window", 50, 40);
 			await client.InvokeAsync("avd.main-window-position-guard.start");
 		}
 
-		private static async Task AssertMainWindowDidNotMoveAsync()
+		private async Task AssertMainWindowDidNotMoveAsync()
 		{
 			using var client = await TryConnectAsync();
-			if (client == null)
-				return;
 
 			using var result = JsonDocument.Parse(
 				await client.InvokeAsync("avd.main-window-position-guard.query"));

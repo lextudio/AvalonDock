@@ -6,7 +6,7 @@ using Xunit;
 namespace AvalonDock.DevFlowIntegrationTests
 {
 	[Collection("DevFlow")]
-	public sealed class DevFlowAgentIntegrationTests : IntegrationTestBase
+	public sealed class DevFlowAgentIntegrationTests : TestAppIntegrationTestBase
 	{
 		[Fact]
 		public async Task AgentStatus_ReportsExpectedWpfCapabilities()

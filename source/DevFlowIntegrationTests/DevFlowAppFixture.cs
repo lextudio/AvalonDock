@@ -10,23 +10,59 @@ using Xunit;
 
 namespace AvalonDock.DevFlowIntegrationTests;
 
+/// <summary>Drives TestApp, the classic sample whose layout the docking tests exercise.</summary>
 [CollectionDefinition("DevFlow")]
-public sealed class DevFlowCollection : ICollectionFixture<DevFlowAppFixture>
+public sealed class DevFlowCollection : ICollectionFixture<TestAppFixture>
 {
 }
 
+/// <summary>
+/// Drives AvalonDockCodeApp (ToggleDockingManager). A separate application, a separate agent and a
+/// separate port: the two samples carry different controls, so they cannot share one process.
+/// </summary>
+[CollectionDefinition("DevFlowCodeApp")]
+public sealed class DevFlowCodeAppCollection : ICollectionFixture<CodeAppFixture>
+{
+}
+
+public sealed class TestAppFixture : DevFlowAppFixture
+{
+    public TestAppFixture() : base("TestApp", 9223)
+    {
+    }
+}
+
+public sealed class CodeAppFixture : DevFlowAppFixture
+{
+    public CodeAppFixture() : base("AvalonDockCodeApp", 9224)
+    {
+    }
+}
+
+/// <summary>
+/// Starts one sample application (Debug build, DevFlow agent on <see cref="AgentPort"/>) and keeps
+/// it alive for the duration of a test collection, restarting it on demand.
+/// </summary>
 public class DevFlowAppFixture : IAsyncLifetime
 {
     private Process _process;
-    private const int Port = 9223;
-    private static readonly string TestAppLogPath = Path.Combine(
+    private static readonly string TestAppLogPathFormat = Path.Combine(
         OperatingSystem.IsWindows() ? Path.GetTempPath() : "/tmp",
-        $"avalondock-devflow-testapp-{Port}.log");
+        "avalondock-devflow-{0}-{1}.log");
     private readonly object _logSync = new();
     private List<string> _hiddenAppNames = new();
+    private readonly string _projectName;
+    private readonly int _port;
 
-    public int AgentPort => Port;
-    public string LogPath => TestAppLogPath;
+    protected DevFlowAppFixture(string projectName, int port)
+    {
+        _projectName = projectName;
+        _port = port;
+        LogPath = string.Format(TestAppLogPathFormat, projectName.ToLowerInvariant(), port);
+    }
+
+    public int AgentPort => _port;
+    public string LogPath { get; }
 
     private static string ResolveDotnetPath()
     {
@@ -62,11 +98,11 @@ public class DevFlowAppFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         var assemblyDir = Path.GetDirectoryName(typeof(DevFlowAppFixture).Assembly.Location);
-        var testAppDir = Path.GetFullPath(Path.Combine(assemblyDir, "..", "..", "..", "..", "TestApp"));
+        var testAppDir = Path.GetFullPath(Path.Combine(assemblyDir, "..", "..", "..", "..", _projectName));
 
         if (!Directory.Exists(testAppDir))
             throw new DirectoryNotFoundException(
-                $"TestApp project not found at {testAppDir} (resolved from {assemblyDir})");
+                $"{_projectName} project not found at {testAppDir} (resolved from {assemblyDir})");
 
         var dotnetPath = ResolveDotnetPath();
         var outputBuilder = new StringBuilder();
@@ -75,13 +111,13 @@ public class DevFlowAppFixture : IAsyncLifetime
             Environment.GetEnvironmentVariable("DEVFLOW_TESTAPP_NO_BUILD"),
             "1",
             StringComparison.Ordinal);
-        File.WriteAllText(TestAppLogPath, $"TestApp log started {DateTimeOffset.Now:O}{Environment.NewLine}");
+        File.WriteAllText(LogPath, $"{_projectName} log started {DateTimeOffset.Now:O}{Environment.NewLine}");
 
         void AppendLog(string stream, string line)
         {
             lock (_logSync)
             {
-                File.AppendAllText(TestAppLogPath, $"[{stream}] {line}{Environment.NewLine}");
+                File.AppendAllText(LogPath, $"[{stream}] {line}{Environment.NewLine}");
             }
         }
 
@@ -96,7 +132,7 @@ public class DevFlowAppFixture : IAsyncLifetime
                 RedirectStandardError = true,
                 Environment =
                 {
-                    ["DEVFLOW_AGENT_PORT"] = Port.ToString(),
+                    ["DEVFLOW_AGENT_PORT"] = _port.ToString(),
                 },
             },
         };
@@ -125,7 +161,7 @@ public class DevFlowAppFixture : IAsyncLifetime
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                $"Failed to start TestApp. Ensure .NET SDK is installed. Error: {ex.Message}", ex);
+                $"Failed to start {_projectName}. Ensure .NET SDK is installed. Error: {ex.Message}", ex);
         }
 
         _process.BeginOutputReadLine();
@@ -142,17 +178,14 @@ public class DevFlowAppFixture : IAsyncLifetime
                     ? $"\nStderr:\n{errorBuilder}"
                     : "";
                 throw new InvalidOperationException(
-                    $"TestApp exited prematurely (exit code: {_process.ExitCode}). Log: {TestAppLogPath}.{error}");
+                    $"{_projectName} exited prematurely (exit code: {_process.ExitCode}). Log: {LogPath}.{error}");
             }
 
             try
             {
-                var response = await httpClient.GetAsync($"http://localhost:{Port}/api/v1/agent/status");
+                var response = await httpClient.GetAsync($"http://localhost:{_port}/api/v1/agent/status");
                 if (response.IsSuccessStatusCode)
-                {
-                    IntegrationTestBase.SetFixturePort(Port);
                     return;
-                }
             }
             catch
             {
@@ -166,7 +199,7 @@ public class DevFlowAppFixture : IAsyncLifetime
             : "";
 
         throw new TimeoutException(
-            $"TestApp did not start within 120 seconds on port {Port}. Log: {TestAppLogPath}.{stderr}");
+            $"{_projectName} did not start within 120 seconds on port {_port}. Log: {LogPath}.{stderr}");
     }
 
     public async ValueTask DisposeAsync()
@@ -194,7 +227,7 @@ public class DevFlowAppFixture : IAsyncLifetime
 		}
 
 		// A new process has no mutation lease, and the id held for the old one would be rejected.
-		DevFlowClient.ForgetLease(Port);
+		DevFlowClient.ForgetLease(_port);
 
 		await InitializeAsync();
 	}
@@ -213,7 +246,7 @@ public class DevFlowAppFixture : IAsyncLifetime
         {
             // Through DevFlowClient so the call carries the mutation lease (avd.activate moves the
             // app window, and the agent rejects any mutation that arrives without one).
-            using var client = new DevFlowClient(Port);
+            using var client = new DevFlowClient(_port);
             await client.InvokeAsync("avd.activate");
         }
         catch

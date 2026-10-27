@@ -18,7 +18,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 	// avd.test-layout.reset first, which explicitly closes any floating windows before
 	// rebuilding the layout, to guarantee none are open when the tree is walked.
 	[Collection("DevFlow")]
-	public sealed class DockingFeatureIntegrationTests : IntegrationTestBase
+	public sealed class DockingFeatureIntegrationTests : TestAppIntegrationTestBase
 	{
 		[Fact]
 		public async Task AgentStatus_ReturnsValidJson()

@@ -10,9 +10,9 @@ using Xunit;
 namespace AvalonDock.DevFlowIntegrationTests
 {
 	[Collection("DevFlow")]
-	public sealed class NativeInputIntegrationTests : IntegrationTestBase
+	public sealed class NativeInputIntegrationTests : TestAppIntegrationTestBase
 	{
-		public NativeInputIntegrationTests(DevFlowAppFixture fixture)
+		public NativeInputIntegrationTests(TestAppFixture fixture)
 			: base(fixture)
 		{
 		}

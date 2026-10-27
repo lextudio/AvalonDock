@@ -14,9 +14,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 	// restores the pre-test layout in a finally block, instead of assuming the default
 	// layout's content IDs are still present.
 	[Collection("DevFlow")]
-	public sealed class DragDropFeatureIntegrationTests : IntegrationTestBase
+	public sealed class DragDropFeatureIntegrationTests : TestAppIntegrationTestBase
 	{
-		public DragDropFeatureIntegrationTests(DevFlowAppFixture fixture)
+		public DragDropFeatureIntegrationTests(TestAppFixture fixture)
 			: base(fixture)
 		{
 		}
