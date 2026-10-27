@@ -27,16 +27,14 @@ namespace AvalonDock.DevFlowIntegrationTests
 			!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
 
 		/// <summary>
-		/// The decomposed press/drag-move/release endpoints do the whole gesture inside the agent
-		/// (XTest on Linux, SendInput on Windows), so no external tool is involved. macOS is the only
-		/// platform where the tests drive cliclick themselves.
+		/// Linux does the whole decomposed press/drag-move/release gesture inside the agent (XTest), so
+		/// no external tool is involved. macOS and Windows drive the bundled CliclickSharp helper.
 		/// </summary>
-		public static bool UsesAgentDecomposedInput => IsLinuxXInputAvailable || OperatingSystem.IsWindows();
+		public static bool UsesAgentDecomposedInput => IsLinuxXInputAvailable;
 
-		// Decomposed press/drag-move/release: WpfAgentService implements these via cliclick's
-		// CGEventPost wrapper on macOS, XTest on Linux and SendInput on Windows
-		// (WindowsNativeInput.TryMousePress/TryMouseDragMove/TryMouseRelease).
-		public static bool RequiresCliclick => OperatingSystem.IsMacOS();
+		// Decomposed press/drag-move/release: the agent implements these via cliclick on macOS and
+		// Windows (the bundled CliclickSharp) and XTest on Linux.
+		public static bool RequiresCliclick => OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
 		public static bool IsCliclickAvailable { get; } = ResolveCliclickAvailable();
 		public static string CliclickPath { get; } = ResolveCliclickPath();
@@ -56,15 +54,15 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 			Assert.SkipUnless(RequiresCliclick,
 				"Decomposed native input (press/drag-move/release) has no implementation on this " +
-				"platform - WpfAgentService supports it via cliclick on macOS, SendInput on Windows, " +
-				"or XTest on Linux with a reachable X display.");
+				"platform - WpfAgentService supports it via cliclick on macOS and Windows, or XTest on " +
+				"Linux with a reachable X display.");
 
 			if (!IsCliclickAvailable)
 			{
 				Assert.Fail(
-					"cliclick is required for native press/drag-move/release input on macOS but was " +
-					"not found (checked /opt/homebrew/bin/cliclick, /usr/local/bin/cliclick, and PATH). " +
-					"Install it with 'brew install cliclick'.");
+					"cliclick is required for native press/drag-move/release input on macOS and Windows but " +
+					"was not found (checked the bundled CliclickSharp next to the tests, then " +
+					"/opt/homebrew/bin/cliclick, /usr/local/bin/cliclick and PATH on macOS).");
 			}
 		}
 
@@ -82,8 +80,20 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 		private static string ResolveCliclickPath()
 		{
+			// The helper the DevFlow package ships (CliclickSharp, a C# port with cliclick's syntax)
+			// is copied next to this assembly by the package's build targets.
+			if (OperatingSystem.IsWindows())
+			{
+				var bundledWindows = Path.Combine(AppContext.BaseDirectory, "CliclickSharp.exe");
+				return File.Exists(bundledWindows) ? bundledWindows : null;
+			}
+
 			if (!OperatingSystem.IsMacOS())
 				return null;
+
+			var bundled = Path.Combine(AppContext.BaseDirectory, "CliclickSharp");
+			if (File.Exists(bundled))
+				return bundled;
 
 			foreach (var candidate in new[] { "/opt/homebrew/bin/cliclick", "/usr/local/bin/cliclick" })
 			{

@@ -570,8 +570,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 			}
 
 			/// <summary>
-			/// Moves the OS pointer. macOS shells out to cliclick; Linux and Windows go through the agent's
-			/// XTest/SendInput-backed move endpoint, so no external tool is involved.
+			/// Moves the OS pointer. macOS shells out to cliclick; Linux goes through the agent's
+			/// XTest-backed move endpoint, so no external tool is involved.
 			/// </summary>
 			private static async Task RunCliclickMoveAsync(
 				double screenX, double screenY, CancellationToken ct, DevFlowClient client = null)

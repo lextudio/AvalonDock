@@ -21,6 +21,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- Only for the CliclickSharp helper its build targets copy next to the tests (macOS and Windows
+         pointer injection for the held-drag cases); the suite itself still talks plain HTTP. -->
+    <PackageReference Include="LeXtudio.DevFlow.Agent.Core" Version="0.3.1" />
   </ItemGroup>
 
 </Project>
