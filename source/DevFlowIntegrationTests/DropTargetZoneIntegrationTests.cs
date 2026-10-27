@@ -321,6 +321,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[DllImport("user32.dll")]
 		private static extern uint GetDoubleClickTime();
 
+		// Temporary diagnostics for the Linux preview-geometry investigation.
+		private static string LastPreviewDiagnostics;
+
 		private static ElementBounds ParsePreviewBounds(string dragState, string zoneType)
 		{
 			using var doc = JsonDocument.Parse(dragState);
@@ -331,6 +334,11 @@ namespace AvalonDock.DevFlowIntegrationTests
 			Assert.True(floating.TryGetProperty("previewGeometryBounds", out var bounds)
 				&& bounds.ValueKind == JsonValueKind.Object,
 				$"Live preview for '{zoneType}' missing geometry before drop: {dragState}");
+
+			// Temporary diagnostics for the Linux preview-geometry investigation.
+			LastPreviewDiagnostics = floating.TryGetProperty("previewDiagnostics", out var previewDiagnostics)
+				? previewDiagnostics.GetString()
+				: null;
 
 			return new ElementBounds(
 				bounds.GetProperty("x").GetDouble(),
@@ -497,10 +505,12 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 				// Same screen position and same size as the preview captured from this exact held drag.
 				const double tolerance = 2.0;
+				var paneDiagnostics = await TryQueryRawBoundsAsync(client, "anchorable-pane", "dragTestTool");
+				var diagnostics = $" LastPreview={LastPreviewDiagnostics} PaneBounds={paneDiagnostics}";
 				Assert.True(Math.Abs(pane.X - capturedPreview.X) <= tolerance && Math.Abs(pane.Y - capturedPreview.Y) <= tolerance,
-					$"Docked pane position does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}");
+					$"Docked pane position does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}" + diagnostics);
 				Assert.True(Math.Abs(pane.Width - capturedPreview.Width) <= tolerance && Math.Abs(pane.Height - capturedPreview.Height) <= tolerance,
-					$"Docked pane size does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}");
+					$"Docked pane size does not match live preview for '{zoneType}': preview={capturedPreview} pane={pane}" + diagnostics);
 			}
 			finally
 			{
@@ -509,10 +519,22 @@ namespace AvalonDock.DevFlowIntegrationTests
 			}
 		}
 
+		/// <summary>Temporary: raw avd.query.bounds payload for a target, or the error text.</summary>
+		private static async Task<string> TryQueryRawBoundsAsync(DevFlowClient client, string target, string contentId)
+		{
+			try
+			{
+				return await client.InvokeAsync("avd.query.bounds", target, contentId);
+			}
+			catch (Exception ex)
+			{
+				return $"{target} query failed: {ex.GetType().Name}: {ex.Message}";
+			}
+		}
+
 		/// <summary>Locates the screen bounds of the pane hosting dragTestTool after a drop
 		/// (anchorable pane or document pane, depending on where the zone landed it).</summary>
-		private static async Task<ElementBounds> QueryHostingPaneAsync(DevFlowClient client, DockLayoutSnapshot final)
-		{
+		private static async Task<ElementBounds> QueryHostingPaneAsync(DevFlowClient client, DockLayoutSnapshot final)		{
 			try
 			{
 				return await client.QueryBoundsAsync("anchorable-pane", "dragTestTool");

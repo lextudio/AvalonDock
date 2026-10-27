@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -52,6 +53,40 @@ namespace AvalonDock.Controls
 		internal static int PortableDragTickCount { get; private set; }
 		internal static string PortableDragLastRequest { get; private set; }
 		internal bool PortableNativeDraggingForDiagnostics => _portableNativeDragging;
+		internal bool PortableDraggingForDiagnostics => _portableDragging;
+		internal bool PortableDragTimerEnabledForDiagnostics => _portableNativeDragTimer?.IsEnabled ?? false;
+
+		// Temporary diagnostics for the Linux drag investigation: the TestApp log is truncated every
+		// time the fixture restarts the app, which is exactly when the drag-start decisions matter, so
+		// the recent decisions are kept in memory and surfaced through avd.query.drag-state instead.
+		private static readonly Queue<string> PortableDragTraceLines = new Queue<string>();
+		private static readonly object PortableDragTraceLock = new object();
+		private int _portableMoveTraceCount;
+
+		internal static string PortableDragTraceText
+		{
+			get
+			{
+				lock (PortableDragTraceLock)
+					return string.Join(" | ", PortableDragTraceLines);
+			}
+		}
+
+		private static void TracePortableDrag(string message)
+		{
+			lock (PortableDragTraceLock)
+			{
+				PortableDragTraceLines.Enqueue(
+					string.Format(
+						CultureInfo.InvariantCulture,
+						"{0:HH:mm:ss.fff} t{1} {2}",
+						DateTime.UtcNow,
+						Environment.CurrentManagedThreadId,
+						message));
+				while (PortableDragTraceLines.Count > 120)
+					PortableDragTraceLines.Dequeue();
+			}
+		}
 		private bool _internalCloseFlag = false;
 
 		/// <summary>
@@ -1235,6 +1270,17 @@ namespace AvalonDock.Controls
 
 		private void OnPortableNativeDragTick(object sender, EventArgs e)
 		{
+			if (PortableDragTickCount <= 3 || PortableDragTickCount % 60 == 0)
+			{
+				TracePortableDrag(string.Format(
+					CultureInfo.InvariantCulture,
+					"tick: n={0} age={1:F0}ms wpfBtn={2} hidBtn={3} dragging={4}",
+					PortableDragTickCount,
+					(DateTime.UtcNow - _portableDragStartUtc).TotalMilliseconds,
+					Mouse.LeftButton,
+					PlatformHelper.IsLeftButtonDown(),
+					_portableDragging));
+			}
 			// Watchdog: a native title-bar drag doesn't reliably route its eventual mouse-up back
 			// through OnMouseLeftButtonUp/OnPortablePostProcessInput (the OS drove the window move
 			// directly, not WPF's input pipeline), so this timer can otherwise keep polling forever
@@ -1255,7 +1301,7 @@ namespace AvalonDock.Controls
 			if (dragAge > PortableNativeDragGracePeriod
 				&& Mouse.LeftButton != MouseButtonState.Pressed && !PlatformHelper.IsLeftButtonDown())
 			{
-				EndPortableDrag(drop: true);
+				EndPortableDrag(drop: true, reason: "watchdog-button-up");
 				return;
 			}
 
@@ -1269,7 +1315,7 @@ namespace AvalonDock.Controls
 				// the drag here must not let OnPortableNativeLocationChanged treat that same still-down
 				// button as a new drag starting on the very next call.
 				_suppressNativeDragUntilButtonReleased = true;
-				EndPortableDrag(drop: false);
+				EndPortableDrag(drop: false, reason: "watchdog-max-duration");
 				return;
 			}
 
@@ -1324,11 +1370,27 @@ namespace AvalonDock.Controls
 		{
 			if (_portableDragging)
 			{
+				TracePortableDrag("down: already dragging");
 				e.Handled = true;
 				return;
 			}
-			if (e.ChangedButton != MouseButton.Left) return;
-			if (Model?.Root?.Manager == null) return;
+			TracePortableDrag(string.Format(
+				CultureInfo.InvariantCulture,
+				"down: btn={0} y={1:F1} cap={2:F1} src={3}",
+				e.ChangedButton,
+				e.GetPosition(this).Y,
+				_portableCaptionHeight,
+				e.OriginalSource?.GetType().Name));
+			if (e.ChangedButton != MouseButton.Left)
+			{
+				TracePortableDrag("down: not left");
+				return;
+			}
+			if (Model?.Root?.Manager == null)
+			{
+				TracePortableDrag("down: no manager");
+				return;
+			}
 
 			// Only the caption drags the window. Buttons/menus in the title bar opt out of caption
 			// treatment via WindowChrome.IsHitTestVisibleInChrome (the same flag the Win32 chrome uses),
@@ -1338,9 +1400,15 @@ namespace AvalonDock.Controls
 				if (!ReferenceEquals(d, this) && d is UIElement ui &&
 					ui.ReadLocalValue(WindowChrome.IsHitTestVisibleInChromeProperty) is true &&
 					d is not DropDownControlArea)
+				{
+					TracePortableDrag("down: chrome-interactive " + d.GetType().Name);
 					return;
+				}
 				if (d is System.Windows.Controls.Primitives.ButtonBase)
+				{
+					TracePortableDrag("down: button ancestor " + d.GetType().Name);
 					return;
+				}
 			}
 
 			// Only the caption STRIP drags the window. Without this bound every press inside the
@@ -1348,7 +1416,14 @@ namespace AvalonDock.Controls
 			// selecting it, and grabbing mouse capture also stopped the window activating. Win32 gets
 			// this bound for free from WindowChrome.CaptionHeight; the managed drag applies it here.
 			if (UsePortableCaptionDrag && e.GetPosition(this).Y > _portableCaptionHeight)
+			{
+				TracePortableDrag(string.Format(
+					CultureInfo.InvariantCulture,
+					"down: below caption ({0:F1} > {1:F1})",
+					e.GetPosition(this).Y,
+					_portableCaptionHeight));
 				return;
+			}
 
 			// Taking mouse capture below suppresses what a press would normally do, in two ways: the
 			// window never activates, and - more visibly - the pane header stays in its inactive (grey)
@@ -1372,6 +1447,16 @@ namespace AvalonDock.Controls
 				OnPortableNativeDragTick,
 				Dispatcher);
 			_portableNativeDragTimer.Start();
+			TracePortableDrag(string.Format(
+				CultureInfo.InvariantCulture,
+				"start: ptr={0:F0},{1:F0} origin={2:F0},{3:F0} offset={4:F0},{5:F0} timerEnabled={6}",
+				pointer.X,
+				pointer.Y,
+				nativeOrigin.X,
+				nativeOrigin.Y,
+				_portableDragOffset.X,
+				_portableDragOffset.Y,
+				_portableNativeDragTimer.IsEnabled));
 			CaptureMouse();
 			e.Handled = true;
 		}
@@ -1392,6 +1477,16 @@ namespace AvalonDock.Controls
 
 			var pointer = PointToScreen(e.GetPosition(this));
 			_portableLastPointer = pointer;
+			if (_portableMoveTraceCount++ % 20 == 0)
+			{
+				TracePortableDrag(string.Format(
+					CultureInfo.InvariantCulture,
+					"move: n={0} ptr={1:F0},{2:F0}",
+					_portableMoveTraceCount,
+					pointer.X,
+					pointer.Y));
+			}
+
 			_dragService?.UpdateMouseLocation(pointer);
 		}
 
@@ -1420,7 +1515,7 @@ namespace AvalonDock.Controls
 		protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
 		{
 			base.OnMouseLeftButtonUp(e);
-			if (_portableDragging && !IsPhantomMouseUp()) EndPortableDrag(drop: true);
+			if (_portableDragging && !IsPhantomMouseUp()) EndPortableDrag(drop: true, reason: "mouse-up");
 		}
 
 		private void OnPortablePostProcessInput(object sender, ProcessInputEventArgs e)
@@ -1432,7 +1527,7 @@ namespace AvalonDock.Controls
 				!IsPhantomMouseUp())
 			{
 				_portableLastPointer = PlatformHelper.GetCursorPosition();
-				EndPortableDrag(drop: true);
+				EndPortableDrag(drop: true, reason: "post-process-input-up");
 			}
 		}
 
@@ -1444,9 +1539,14 @@ namespace AvalonDock.Controls
 			// real button-up still completes the drag, while the timer keeps its position live.
 		}
 
-		private void EndPortableDrag(bool drop)
+		private void EndPortableDrag(bool drop, string reason)
 		{
-			if (!_portableDragging) return;
+			if (!_portableDragging)
+			{
+				TracePortableDrag("end(" + reason + "): not dragging, ignored");
+				return;
+			}
+			TracePortableDrag("end(" + reason + "): drop=" + drop);
 			_portableDragging = false;
 			_portableNativeDragging = false;
 			_portableNativeDragTimer?.Stop();
@@ -1488,7 +1588,7 @@ namespace AvalonDock.Controls
 
 		internal void CompletePortableDragForDiagnostics()
 		{
-			EndPortableDrag(drop: true);
+			EndPortableDrag(drop: true, reason: "complete-for-diagnostics");
 		}
 
 		#endregion Portable (non-HWND) caption drag
