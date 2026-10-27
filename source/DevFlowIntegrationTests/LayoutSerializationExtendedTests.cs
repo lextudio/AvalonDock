@@ -98,8 +98,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_WithAutoHidePanels_Issue111()
 		{
-			KnownLibreWpfGaps.SkipOnLibreWpf(KnownLibreWpfGaps.AutoHideClick);
-
 			using var client = await TryConnectAsync();
 
 			var anchorable = FindContent(await QueryLayoutAsync(client), "anchorables", "AutoHide1 Content");

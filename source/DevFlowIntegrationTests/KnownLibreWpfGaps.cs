@@ -33,7 +33,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		}
 
 		public const string AutoHideClick =
-			"a click that lands on the auto-hide anchor (not handled) does not open the flyout";
+			"the auto-hide flyout opens on a click but is not dismissed afterwards (it stays open after a document is activated or on a second round)";
 
 		public const string MacNativeDrag =
 			"the cliclick-driven drag/resizer gesture does not reach AvalonDock on the macOS runner";

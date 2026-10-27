@@ -721,7 +721,7 @@ test, so they are skipped on LibreWPF with the reason in the skip message;
 
 | Gap | Cases | Evidence |
 |---|---|---|
-| Auto-hide click | `ClickAutoHideTab_OpensFlyout_Issue169`, `AutoHideWithTextBoxes_ContentAccessible_Issue62`, `AutoHideFlyout_IsResponsive_Issue10`, `SaveLoadLayout_WithAutoHidePanels_Issue111` | The click lands on the right anchor (`hitContentTitle` = `AutoHide1 Content`), down and up both arrive, `lastDownHandled=false`, `Mouse.DirectlyOver` is the anchor's `Border`; `LayoutAnchorControl.OnMouseDown` should then call `ShowAutoHideWindow`, but `avd.query.autohide` never reports the flyout open. Next step: trace `AutoHideWindowManager.ShowAutoHideWindow` and the close timer (`IsWin32MouseOver` on LibreWPF) |
+| Auto-hide dismissal | `ClickAutoHideTab_OpensFlyout_Issue169`, `AutoHideFlyout_IsResponsive_Issue10` | The click gap is fixed in ProGPU (see below): the flyout opens now, and `AutoHideWithTextBoxes_ContentAccessible_Issue62` and `SaveLoadLayout_WithAutoHidePanels_Issue111` pass. What is left: the flyout stays open after a document is activated (#169) and does not close on round 1 (#10). Next step: trace `AutoHideWindowManager`'s close timer (`IsWin32MouseOver` on LibreWPF) |
 | Tool tab click | `ClickToolWindowTab_ActivatesIt_Issue375`, `ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` | Even with the pane widened to 300, the centre of Tool Window 1's tab header (as `TransformToAncestor` reports it) hit-tests to `Tool Window 2`, and that is what activates. The anchorable tab panel is arranged differently from WPF |
 | macOS native drag | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` (macOS only) | Failed on the macOS runner in every run since the matrix was added (the overlay never appears, the resizer never moves); Linux runs the same cases green through XTest |
 
@@ -1022,3 +1022,15 @@ Becomes simpler, with one honest caveat.
   linux-x64 and linux-arm64, the Windows legs fail as described above (now `continue-on-error`), the macOS leg
   was cancelled by a later push and has no result yet. DevFlow is pinned to `0.3.1` again, served from
   GitHub Packages (forced version, see 11.8).
+- 2026-10-27 (auto-hide click, **root cause in ProGPU**, fixed there): the click never reached
+  `LayoutAnchorControl` because the anchor sits under a 90/270 degree `LayoutTransform` and LibreWPF's GPU
+  hit test found no region for it. Reproduced on macOS without a window (a rotated `Border`: 270 degrees 0%
+  hit, -90 degrees 100%) and narrowed with ProGPU's hit-test primitive dump: the layout clip is the
+  intersection of two identical rectangles, `PrimitivePathGeometry.TryGetAxisAlignedRectangleBounds`
+  required four explicit segments (WPF's `RectangleGeometry` is three plus the implicit close), so the
+  exact-containment shortcut was skipped and the GPU path-op solver returned two zero-area slivers for the
+  coincident edges, a clip of zero area. Fixed in ProGPU `02119efdf` (recognise the implicit closing edge;
+  drop zero-area line figures from path-op output; two regression tests), published through the LibreWPF
+  package pipeline. AvalonDock was not changed for it. Verified on the Linux leg with the new packages:
+  the flyout opens, 2 of the 4 auto-hide cases pass; the other two now fail later, on dismissal.
+  The tool-tab click gap was a TestApp query bug and passes (3 cases un-skipped).
