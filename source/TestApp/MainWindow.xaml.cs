@@ -1694,6 +1694,217 @@ namespace TestApp
 			return System.Text.Json.JsonSerializer.Serialize(report);
 		}
 
+		/// <summary>Describes a menu item the way a test asserts on it: header, state and what it carries.</summary>
+		private static Dictionary<string, object> DescribeMenuItem(MenuItem item) => new Dictionary<string, object>
+		{
+			["header"] = item.Header?.ToString(),
+			["isEnabled"] = item.IsEnabled,
+			["isCheckable"] = item.IsCheckable,
+			["isChecked"] = item.IsChecked,
+			["isSubmenu"] = item.Items.Count > 0,
+			["itemCount"] = item.Items.Count,
+			["command"] = item.Command?.GetType().Name,
+			["tag"] = item.Tag?.ToString(),
+			["role"] = item.Role.ToString(),
+		};
+
+		/// <summary>
+		/// Resolves a menu path such as <c>Layout/Save/Layout_1</c> against the live menu bar. A '/' or a
+		/// '&gt;' separates the levels, the comparison against each header is case-insensitive, and a
+		/// missing segment returns a message naming what was there instead (so a test failure says what
+		/// the menu actually had).
+		/// </summary>
+		private MenuItem FindMenuItem(string path, out string error)
+		{
+			error = null;
+			if (string.IsNullOrWhiteSpace(path))
+				return null;
+
+			MenuItem current = null;
+			foreach (var segment in path.Split(new[] { '/', '>' }, StringSplitOptions.RemoveEmptyEntries))
+			{
+				var siblings = current == null
+					? mainMenu.Items.OfType<MenuItem>().ToArray()
+					: current.Items.OfType<MenuItem>().ToArray();
+				var header = segment.Trim();
+				var next = siblings.FirstOrDefault(i =>
+					string.Equals(i.Header?.ToString(), header, StringComparison.OrdinalIgnoreCase));
+				if (next == null)
+				{
+					error = $"No menu item '{header}' in " +
+						(current == null ? "the menu bar" : $"'{current.Header}'") +
+						". Available: " + string.Join(", ", siblings.Select(i => i.Header?.ToString()));
+					return null;
+				}
+
+				current = next;
+			}
+
+			return current;
+		}
+
+		[DevFlowAction("avd.menu.items",
+			Description = "List the main menu: without a path the top-level headers, with a 'Layout/Save' " +
+			              "path the children of that submenu (header, enabled, checkable, checked, command)")]
+		public string MenuItems(string path = null)
+		{
+			var parent = FindMenuItem(path, out var error);
+			if (error != null)
+				throw new InvalidOperationException(error);
+
+			var items = parent == null
+				? mainMenu.Items.OfType<MenuItem>().ToArray()
+				: parent.Items.OfType<MenuItem>().ToArray();
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["path"] = path ?? string.Empty,
+				["count"] = items.Length,
+				["items"] = items.Select(DescribeMenuItem).ToArray(),
+			});
+		}
+
+		/// <summary>
+		/// Invokes a menu item by header path, which is what selecting it does: a command item runs its
+		/// command, an item with a Click handler raises Click with itself as the sender (the handlers
+		/// here read <c>(sender as MenuItem).Header</c>, so the item has to be the source).
+		/// </summary>
+		[DevFlowAction("avd.menu.invoke",
+			Description = "Invoke a menu item by header path, e.g. 'Layout/Save/Layout_1' or 'Tools/New floating window'")]
+		public string InvokeMenuItem(string path)
+		{
+			var item = FindMenuItem(path, out var error);
+			if (error != null)
+				throw new InvalidOperationException(error);
+			if (item.Items.Count > 0)
+				throw new InvalidOperationException($"'{path}' is a submenu; name the item inside it.");
+
+			string via;
+			if (item.Command != null)
+			{
+				if (!item.Command.CanExecute(item.CommandParameter))
+					throw new InvalidOperationException($"The command of '{path}' cannot execute.");
+				item.Command.Execute(item.CommandParameter);
+				via = "command:" + item.Command.GetType().Name;
+			}
+			else
+			{
+				item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, item));
+				via = "click";
+			}
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["invoked"] = path,
+				["via"] = via,
+				["isChecked"] = item.IsChecked,
+				["item"] = DescribeMenuItem(item),
+				["managerHosted"] = layoutRoot.Children.Contains(dockManager),
+			});
+		}
+
+		[DevFlowAction("avd.menu.close", Description = "Close every open menu and context menu so the next gesture is not swallowed")]
+		public string CloseMenus()
+		{
+			foreach (var item in FindVisualDescendants<MenuItem>(mainMenu))
+				item.IsSubmenuOpen = false;
+
+			var closed = new List<string>();
+			foreach (var menu in new[] { dockManager.AnchorableContextMenu, dockManager.DocumentContextMenu })
+			{
+				if (menu?.IsOpen != true)
+					continue;
+				menu.IsOpen = false;
+				closed.Add(menu.Name ?? "context-menu");
+			}
+
+			if (Keyboard.FocusedElement is UIElement focused)
+				focused.RaiseEvent(new RoutedEventArgs(Keyboard.LostKeyboardFocusEvent, focused));
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["closed"] = closed.ToArray(),
+			});
+		}
+
+		/// <summary>
+		/// Right-clicks a tab without a pointer: the tab's <see cref="DropDownControlArea"/> handles
+		/// PreviewMouseRightButtonUp (a class handler) and opens the manager's context menu, so raising
+		/// that event on the area runs the same code a real right click does. TestApp defines no context
+		/// menu, so the useful assertion is that the gesture is a no-op: the tab survives and the app
+		/// is still answering.
+		/// </summary>
+		[DevFlowAction("avd.tab.right-click",
+			Description = "Raise the tab's right-click event (document or anchorable) and report whether a context menu opened")]
+		public string RightClickTab(string title, string kind = "document")
+		{
+			var roots = GetAvalonDockVisualRoots().ToArray();
+			FrameworkElement tab;
+			if (string.Equals(kind, "anchorable", StringComparison.OrdinalIgnoreCase))
+			{
+				tab = roots.SelectMany(FindVisualDescendants<LayoutAnchorableTabItem>)
+					.FirstOrDefault(t => string.Equals(t.Model?.Title, title, StringComparison.Ordinal)
+						|| string.Equals(t.Model?.ContentId, title, StringComparison.Ordinal));
+			}
+			else
+			{
+				tab = roots.SelectMany(FindVisualDescendants<LayoutDocumentTabItem>)
+					.FirstOrDefault(t => string.Equals(t.Model?.Title, title, StringComparison.Ordinal)
+						|| string.Equals(t.Model?.ContentId, title, StringComparison.Ordinal));
+			}
+
+			if (tab == null)
+				throw new InvalidOperationException($"No {kind} tab titled '{title}' is visible.");
+
+			var area = FindVisualDescendants<DropDownControlArea>(tab).FirstOrDefault();
+			if (area == null)
+				throw new InvalidOperationException($"The '{title}' tab has no drop-down area to right-click.");
+
+			var raised = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right)
+			{
+				RoutedEvent = UIElement.PreviewMouseRightButtonUpEvent,
+				Source = area,
+			};
+			area.RaiseEvent(raised);
+
+			var menu = area.DropDownContextMenu;
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["title"] = title,
+				["kind"] = kind,
+				["handled"] = raised.Handled,
+				["hasContextMenu"] = menu != null,
+				["isMenuOpen"] = menu?.IsOpen ?? false,
+				["menuItems"] = menu == null
+					? Array.Empty<Dictionary<string, object>>()
+					: menu.Items.OfType<MenuItem>().Select(DescribeMenuItem).ToArray(),
+			});
+		}
+
+		[DevFlowAction("avd.query.window", Description = "Query the main window's position, size and state")]
+		public string QueryWindow() => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+		{
+			["left"] = Left,
+			["top"] = Top,
+			["width"] = ActualWidth,
+			["height"] = ActualHeight,
+			["state"] = WindowState.ToString(),
+			["isActive"] = IsActive,
+			["managerHosted"] = layoutRoot.Children.Contains(dockManager),
+		});
+
+		[DevFlowAction("avd.window.resize", Description = "Resize the main window without moving it, as dragging its edge does")]
+		public string ResizeWindow(double width, double height)
+		{
+			if (width <= 0 || height <= 0)
+				throw new ArgumentOutOfRangeException(nameof(width), "A window needs a positive size.");
+
+			Width = width;
+			Height = height;
+			UpdateLayout();
+			return QueryWindow();
+		}
+
 		[DevFlowAction("avd.transparency.probe",
 			Description = "Diagnostic A/B: opens two plain top-level windows next to each other - one " +
 			              "with AllowsTransparency=true/WindowStyle=None, one opaque - each containing a " +
