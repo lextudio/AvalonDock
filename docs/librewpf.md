@@ -868,58 +868,60 @@ The consequences seen in the CI runs of 2026-10-27:
 3. Packages that do not touch WPF types may be shared by both lines (`AvalonDock.Core`,
    `AvalonDock.Serializer.Xml`, `.Json`, `.Mvvm*`, `.DependencyInjection`: all `netstandard2.0`).
 
-### 11.3 Target layout
+### 11.3 Target layout (as built)
 
 ```
 source/
-  AvalonDock.sln                       WPF line (upstream shape), Windows only
-  AvalonDock.LibreWPF.sln              LibreWPF line, any OS
+  AvalonDock.sln                       WPF line (upstream shape)
+  AvalonDock.LibreWPF.sln              LibreWPF line: shared netstandard projects, *.LibreWPF.csproj, DevFlowIntegrationTests
+  Directory.Build.props                shared; one PropertyGroup applies to projects whose name contains ".LibreWPF"
   Components/
-    AvalonDock/                        original csproj (WindowsDesktop SDK, multi-target)  [WPF]
-    AvalonDock.Themes.*/               original csprojs                                    [WPF]
-    AvalonDock.Core, .Serializer.*, .Mvvm*, .DependencyInjection     shared, netstandard2.0
-  LibreWPF/
-    AvalonDock.LibreWPF/               Sdk="LibreWPF.Sdk", net10.0-windows, links ../../Components/AvalonDock sources
-    AvalonDock.Themes.VS.LibreWPF/     same idea for the themes OpenDevelop ships
-    AvalonDock.Themes.VS2013.LibreWPF/
-    TestApp.LibreWPF/                  links ../../TestApp sources + the DevFlow action partials
-    AvalonDockCodeApp.LibreWPF/
-    MVVMTestApp.LibreWPF/
-  DevFlowIntegrationTests/             unchanged, net10.0, talks HTTP to the LibreWPF apps
-  AutomationTest/AvalonDockTest/       WPF unit tests + FlaUI (kept as is, Windows, real WPF)
-  TestApp/, AvalonDockCodeApp/, MVVMTestApp/   WPF samples, upstream csprojs, no DevFlow
+    AvalonDock/                        AvalonDock.csproj (WPF)  +  AvalonDock.LibreWPF.csproj (LibreWPF)
+    AvalonDock.Themes.{VS,VS2013,Aero,Arc,Expression,Metro,VS2010}/   X.csproj + X.LibreWPF.csproj
+    AvalonDock.Core, .Serializer.*, .Mvvm*, .DependencyInjection      shared, netstandard2.0, upstream gates
+    AvalonDock/Platform/LibreWPF/      macOS and Linux platform services, compiled by the LibreWPF twin only
+  TestApp/, MVVMTestApp/, AvalonDockCodeApp/       X.csproj (WPF samples) + X.LibreWPF.csproj (DevFlow-driven)
+  DevFlowIntegrationTests/             net10.0, HTTP client, starts the *.LibreWPF apps
+  AutomationTest/AvalonDockTest/       WPF unit tests + FlaUI (real WPF, Windows)
 .github/workflows/
-  ci.yml                  WPF: Windows build with --warnaserror, unit tests, FlaUI (PR to master / release/**)
+  ci.yml                  WPF: Windows build, unit tests (and FlaUI)
   release.yml             WPF: tag v* -> nuget.org (upstream behaviour)
-  ci-librewpf.yml         LibreWPF: push to opendevelop + dispatch, build + DevFlow on five legs
-  release-librewpf.yml    LibreWPF: validate, then publish the OpenDevelop closure to GitHub Packages
+  ci-librewpf.yml         LibreWPF: push to opendevelop + dispatch, DevFlow on five legs
+  release-librewpf.yml    LibreWPF: validate on Windows/macOS/Linux, publish the OpenDevelop closure to GitHub Packages (tag librewpf-v*)
 ```
 
-Project mapping for the LibreWPF line (what OpenDevelop consumes today, from `NuGet.config`):
+Package mapping (what OpenDevelop consumes, from `NuGet.config`):
 
-| Package | Line | Source |
+| Package | Line | Project |
 |---|---|---|
 | `Dirkster.AvalonDock.Core` | shared | `Components/AvalonDock.Core` |
 | `Dirkster.AvalonDock.Serializer.Xml` | shared | `Components/AvalonDock.Serializer.Xml` |
-| `Dirkster.AvalonDock.LibreWPF` | LibreWPF | `LibreWPF/AvalonDock.LibreWPF` (links `Components/AvalonDock`) |
-| `Dirkster.AvalonDock.Themes.VS.LibreWPF` | LibreWPF | `LibreWPF/AvalonDock.Themes.VS.LibreWPF` |
-| `Dirkster.AvalonDock.Themes.VS2013.LibreWPF` | LibreWPF | `LibreWPF/AvalonDock.Themes.VS2013.LibreWPF` |
-| `Dirkster.AvalonDock`, `.Themes.*` (no suffix) | WPF | the original projects, back to upstream shape |
+| `Dirkster.AvalonDock.LibreWPF` | LibreWPF | `Components/AvalonDock/AvalonDock.LibreWPF.csproj` |
+| `Dirkster.AvalonDock.Themes.VS.LibreWPF`, `...VS2013.LibreWPF` | LibreWPF | `...Themes.VS/...VS.LibreWPF.csproj`, `...Themes.VS2013/...VS2013.LibreWPF.csproj` |
+| `Dirkster.AvalonDock`, `.Themes.*` (no suffix) | WPF | the original projects |
 
-### 11.4 How the LibreWPF projects share source
+### 11.4 How the two lines share source (what was measured)
 
-The LibreWPF csproj turns off default items and links the WPF project's files
-(`<Compile Include="..\..\Components\AvalonDock\**\*.cs" Link="..." />`, plus `Page`, `Resource` and
-`EmbeddedResource` items for XAML, PNG and resx). Constraints to keep:
+The first design linked the WPF project's files into a LibreWPF project in another folder
+(`<Compile Include="..\..\Components\AvalonDock\**\*.cs" Link=...>`). **Linking `.cs` files works;
+linking XAML does not**: the WPF markup compiler flattens the intermediate BAML of pages that live outside
+the project folder by file name, so `Themes/Generic.xaml` and `Themes/VS2022/Generic.xaml` overwrote each
+other and the `Themes.VS` package came out 8 KB short (caught by comparing the packed assembly against the
+pre-split package, entry by entry). So the LibreWPF csproj sits **in the same folder** as its WPF twin and
+compiles that folder's sources with the normal globs. What keeps the twins apart:
 
-- **`AssemblyName` stays `AvalonDock` (and `AvalonDock.Themes.VS`, ...)** in both lines, because the XAML
-  uses `pack://application:,,,/AvalonDock;component/...` URIs and the themes reference them by name. Only
-  the `PackageId` differs. Same strong-name key.
-- `Controls/Shell` (Win32 chrome) is excluded and `Controls/Shell.Portable` included in the LibreWPF
-  project, instead of the OS-conditioned `Compile Remove` that exists now.
-- `LIBREWPF` is defined by the LibreWPF csproj itself, not by `$(OS)`.
-- `Directory.Build.props` loses the "make LibreWPF.Sdk behave like WindowsDesktop on Windows" block: the
-  LibreWPF projects are portable everywhere; the WPF projects never import the LibreWPF SDK.
+- `source/Directory.Build.props` gives every project whose name contains `.LibreWPF` its own
+  `BaseIntermediateOutputPath` (`obj/librewpf/`), `BaseOutputPath` (`bin/librewpf/`),
+  `DefaultItemExcludes` (`obj/**;bin/**`), the single `net10.0-windows` target, `LIBREWPF`, the
+  ProGPU support-package pin, and switches the analyzers off (the LibreWPF packages are OpenDevelop
+  dependencies). The condition uses `Contains('.LibreWPF')` because the markup compiler derives a
+  `*.LibreWPF_xxxx_wpftmp.csproj`.
+- The assembly keeps the WPF name (`AvalonDock`, `AvalonDock.Themes.VS`, ...): the XAML uses
+  `pack://application:,,,/AvalonDock;component/...` URIs. Only `PackageId` differs. Same strong-name key.
+- `Controls/Shell` (Win32 chrome) is removed from the LibreWPF twin; `Controls/Shell.Portable` and
+  `Platform/LibreWPF` are removed from the WPF project.
+- Result: the three packages OpenDevelop consumes are entry-for-entry identical to those built before the
+  split (same files, same sizes; `AvalonDock.dll` is +1 KB after the analyzer clean-up).
 
 ### 11.5 Tests
 
@@ -954,22 +956,30 @@ Becomes simpler, with one honest caveat.
 
 ### 11.7 Work plan and status
 
-1. [ ] Split commit: restore `source/Components/AvalonDock*/` csprojs and the three WPF samples to the
-       upstream shape (the version before `2abf413 Migrate to new SDK`), keeping the fork's source edits.
-2. [ ] Create `source/LibreWPF/*` projects with linked sources (11.4); verify the packed
-       `Dirkster.AvalonDock.LibreWPF` equals today's package (same assemblies, same ids).
-3. [ ] `AvalonDock.LibreWPF.sln`; slim `AvalonDock.sln` to the WPF line.
-4. [ ] Move the DevFlow action partials and the `LeXtudio.DevFlow.Agent.*` references into the
-       LibreWPF sample projects; the WPF samples lose them.
-5. [ ] Split the workflows: `ci.yml`/`release.yml` back to the WPF line, new `ci-librewpf.yml` and
-       `release-librewpf.yml` (the GitHub Packages publishing and the OpenAvalon closure checks move there).
-6. [ ] Audit shared files for LibreWPF-only logic that upstream would not take (`PlatformHelper`,
-       `LayoutFloatingWindowControl`, `LayoutAutoHideWindowControl`, `WindowHelper`, ...).
-7. [ ] Warning clean-up so the WPF line builds with `--warnaserror` again.
-8. [ ] Windows DevFlow legs on LibreWPF; drop the Windows skip logic; re-baseline the skip list.
-9. [ ] Update `AGENTS.md` (it still says "WPF projects only build on Windows") and this document.
-
-Order matters: 1-3 first (packages must not change meaning for OpenDevelop), then 4-5, then 6-9.
+1. [x] WPF csprojs restored to the upstream shape (WindowsDesktop SDK, `$(ComponentTargetFrameworks)` =
+       net9.0/net10.0/net48 for libraries; `TestApp` net9.0/net10.0 because the fork's test hooks use newer
+       APIs than .NET Framework); shared netstandard projects regain docs and analyzers.
+2. [x] `*.LibreWPF.csproj` twins for the library, the seven themes and the three samples; package identity
+       verified against the pre-split packages (11.4).
+3. [x] `AvalonDock.LibreWPF.sln`; `AvalonDock.sln` is the WPF line again.
+4. [x] DevFlow surface behind `DEVFLOW` (`App.xaml.cs`, usings and `[DevFlowUIThread]` in the samples);
+       `MainWindow.DevFlowActions.cs` and `DockDiagnostics.cs` are removed from the WPF samples; the fixture
+       starts `X.LibreWPF.csproj` (`bin/librewpf/Debug/net10.0-windows/X.dll`).
+5. [x] Workflows split (`ci.yml`/`release.yml` = WPF, `ci-librewpf.yml`/`release-librewpf.yml` = LibreWPF).
+6. [x] Audit of shared files: macOS/Linux platform services moved to `Platform/LibreWPF/`, the
+       `PlatformManager` branches and `PlatformHelper`'s cache sit behind `LIBREWPF`. Still in shared files
+       and still LibreWPF-flavoured: `UsePortableCaptionDrag` and the managed caption drag in
+       `LayoutFloatingWindowControl`, the deferred sizing hook for #174, `LayoutAutoHideWindowControl`'s
+       portable hosting (all selected at run time or by `#if LIBREWPF`). Moving them out is a follow-up
+       if upstream asks for it.
+7. [x] The WPF line builds with analyzers and warnings-as-errors on net9.0, net10.0 and net48 (checked on
+       macOS with `EnableWindowsTargeting`; 224 findings fixed: `dotnet format` for style rules, XML docs
+       by hand, regions removed, `CA1502`/`CA1506` suppressed with a justification on
+       `LayoutAutoHideWindowControl`, `LayoutFloatingWindowControl` and `OverlayWindow.GetTargets`).
+8. [~] Windows DevFlow legs on LibreWPF: pushed, CI is the judge (section 11.9). The Windows skip logic in
+       `NativeInputEnvironment` and `KnownLibreWpfGaps.IsLibreWpf` is still the old one and is to be
+       reduced once the Windows legs show what the LibreWpf agent really does there.
+9. [x] `AGENTS.md` describes both lines.
 
 ### 11.8 Related work in other repositories
 
@@ -983,4 +993,6 @@ Order matters: 1-3 first (packages must not change meaning for OpenDevelop), the
 - 2026-10-27: plan written. Landed before it, on `opendevelop`: #174 fix (`0ab025b`), CI on every push
   (`e32bce4`), Windows decomposed input (`c2a2424`, `9e7473b`), bundled CliclickSharp for macOS/Windows
   held drags (`ecac77d`, CI pending).
-
+- 2026-10-27 (later): steps 1-7 and 9 landed (`a25586c`, `f81bab3`). DevFlow packages now come from the
+  DevFlow pipeline's GitHub Packages feed (`6e6a97e`, see 11.8). Open: the first CI results of the two
+  new workflows, and the reductions in step 8.
