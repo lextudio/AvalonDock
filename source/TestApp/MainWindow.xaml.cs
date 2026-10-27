@@ -52,6 +52,10 @@ namespace TestApp
 
 		// null = show the real modal dialog; otherwise the test has already decided the answer.
 		private string _dialogAnswer;
+
+		// The confirmations the sample asked for, so a test can assert the lifecycle ran instead of
+		// looking for a modal window it cannot see.
+		private readonly List<string> _dialogQuestions = new List<string>();
 		private Point? _mainWindowPositionGuardViolation;
 
 		private enum GetWindowCmd : uint
@@ -1394,10 +1398,16 @@ namespace TestApp
 				});
 			}
 
-			public string ActivateFloatingWindow(string contentId)
+			public string ActivateFloatingWindow(string contentId = null)
 			{
-				var floating = FindVisibleFloatingWindow(contentId)
-					?? throw new InvalidOperationException($"Floating window not found for '{contentId}'.");
+				// Without a content id, the first floating window: the Tools menu creates one whose
+				// anchorable has no ContentId at all, and a test that just created it needs no other
+				// handle on it.
+				var floating = string.IsNullOrEmpty(contentId)
+					? dockManager.FloatingWindows.LastOrDefault(fw => fw.IsLoaded && fw.IsVisible)
+					: FindVisibleFloatingWindow(contentId);
+				if (floating == null)
+					throw new InvalidOperationException($"Floating window not found for '{contentId}'.");
 				floating.Activate();
 				floating.Focus();
 				Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
@@ -1851,6 +1861,9 @@ namespace TestApp
 		/// </summary>
 		public string AnswerDialogs(string answer)
 		{
+			lock (_dialogQuestions)
+				_dialogQuestions.Clear();
+
 			var mode = (answer ?? "ask").Trim().ToLowerInvariant();
 			switch (mode)
 			{
@@ -1873,10 +1886,44 @@ namespace TestApp
 
 		private bool? AskYesNo(string message, string caption)
 		{
+			lock (_dialogQuestions)
+				_dialogQuestions.Add(message);
+
 			if (_dialogAnswer != null)
 				return _dialogAnswer == "yes";
 
 			return MessageBox.Show(message, caption, MessageBoxButton.YesNo) == MessageBoxResult.Yes;
+		}
+
+		/// <summary>The confirmations the sample has asked for since the last avd.dialogs.answer.</summary>
+		public string QueryDialogs()
+		{
+			string[] questions;
+			lock (_dialogQuestions)
+				questions = _dialogQuestions.ToArray();
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["answer"] = _dialogAnswer ?? "ask",
+				["questions"] = questions,
+			});
+		}
+
+		/// <summary>
+		/// Closes a floating window through the path a window manager's close button takes: the
+		/// window's own Closing/Closed lifecycle, which is what raises the anchorables' Hiding event.
+		/// A WM_SYSCOMMAND/SC_CLOSE post ends in exactly this call, so the behaviour under test - not
+		/// the Win32 message - is what this reproduces.
+		/// </summary>
+		public string CloseFloatingWindow(string contentId)
+		{
+			var floating = FindVisibleFloatingWindow(contentId);
+			if (floating == null)
+				throw new InvalidOperationException($"No floating window found for '{contentId}'.");
+
+			floating.Close();
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+			return QueryLayout();
 		}
 
 		/// <summary>Adds the two documents by clicking the sample's own button, so its handler runs.</summary>
@@ -1954,10 +2001,12 @@ namespace TestApp
 		/// </summary>
 		public string QueryAutoHide(string contentIdOrTitle = null)
 		{
+			// The flyout's model is the anchorable it was opened for (LayoutAutoHideWindowControl.Show
+			// assigns it directly), not a pane, so it is read rather than descended into.
 			var flyout = dockManager.AutoHideWindow;
-			var hosted = flyout?.Model == null
-				? Array.Empty<string>()
-				: flyout.Model.Descendents().OfType<LayoutContent>().Select(c => c.ContentId).ToArray();
+			var hosted = flyout?.Model is LayoutAnchorable flyoutAnchorable && flyout.IsVisible
+				? new[] { flyoutAnchorable.ContentId }
+				: Array.Empty<string>();
 
 			var requested = dockManager.Layout.Descendents().OfType<LayoutAnchorable>()
 				.FirstOrDefault(a =>
@@ -3148,15 +3197,33 @@ namespace TestApp
 			return false;
 		}
 
-		public string CloseDocument(string contentId)
+		public string CloseContent(string contentIdOrTitle)
 		{
-			var doc = dockManager.Layout.Descendents()
-				.OfType<LayoutDocument>()
-				.FirstOrDefault(d => d.ContentId == contentId);
-			if (doc == null)
-				return $"Document '{contentId}' not found";
-			doc.Close();
-			return $"Closed '{contentId}'";
+			var content = dockManager.Layout.Descendents()
+				.OfType<LayoutContent>()
+				.FirstOrDefault(c =>
+					string.Equals(c.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+					|| string.Equals(c.Title, contentIdOrTitle, StringComparison.Ordinal));
+			if (content == null)
+				return $"Content '{contentIdOrTitle}' not found";
+
+			// CanClose is the sample's own contract (WinForms Window is CanClose=False), so a close
+			// attempt on it must report that instead of removing it.
+			if (!content.CanClose)
+				return $"'{content.Title}' cannot be closed (CanClose=false)";
+
+			switch (content)
+			{
+				case LayoutDocument document:
+					document.Close();
+					break;
+				case LayoutAnchorable anchorable:
+					anchorable.Close();
+					break;
+			}
+
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+			return QueryLayout();
 		}
     }
 }

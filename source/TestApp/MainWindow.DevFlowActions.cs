@@ -125,7 +125,7 @@ namespace TestApp
 			public static string ActivateTestWindowAction() => OnUi(w => w.ActivateTestWindow());
 
 			[DevFlowAction("avd.activate-floating", Description = "Raise a floating AvalonDock window before native input safety checks")]
-			public static string ActivateFloatingWindowAction(string contentId) => OnUi(w => w.ActivateFloatingWindow(contentId));
+			public static string ActivateFloatingWindowAction(string contentId = null) => OnUi(w => w.ActivateFloatingWindow(contentId));
 
 			[DevFlowAction("avd.position-main-window", Description = "Move the AvalonDock test window to the primary-screen test area")]
 			public static string PositionMainWindowAction(double left = 50, double top = 40) => OnUi(w => w.PositionMainWindow(left, top));
@@ -187,6 +187,12 @@ namespace TestApp
 
 		[DevFlowAction("avd.document.activate", Description = "Make a document active by content id or title")]
 		public static string ActivateDocumentAction(string contentIdOrTitle) => OnUi(w => w.ActivateDocument(contentIdOrTitle));
+
+		[DevFlowAction("avd.dialogs.query", Description = "Report the confirmations the sample has asked for since the last avd.dialogs.answer")]
+		public static string QueryDialogsAction() => OnUi(w => w.QueryDialogs());
+
+		[DevFlowAction("avd.close-floating", Description = "Close a floating window through its own close lifecycle, as a window manager's close button does")]
+		public static string CloseFloatingWindowAction(string contentId) => OnUi(w => w.CloseFloatingWindow(contentId));
 
 		[DevFlowAction("avd.content", Description = "Report the TextBox texts, TextBlocks and Button labels inside a document or anchorable")]
 		public static string ContentReportAction(string contentIdOrTitle) => OnUi(w => w.ContentReport(contentIdOrTitle));
@@ -259,7 +265,7 @@ namespace TestApp
 		[DevFlowAction("avd.new-floating", Description = "Create a new floating anchorable window")]
 		public static string NewFloatingWindowAction(string title = null) => OnUi(w => w.NewFloatingWindow(title));
 
-		[DevFlowAction("avd.close-document", Description = "Close a document by ContentId")]
-		public static string CloseDocumentAction(string contentId) => OnUi(w => w.CloseDocument(contentId));
+		[DevFlowAction("avd.close-content", Description = "Close a document or anchorable by content id or title, honouring CanClose")]
+		public static string CloseContentAction(string contentIdOrTitle) => OnUi(w => w.CloseContent(contentIdOrTitle));
 	}
 }
