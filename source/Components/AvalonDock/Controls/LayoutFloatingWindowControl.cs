@@ -46,6 +46,12 @@ namespace AvalonDock.Controls
 		/// that this window's position tracks the pointer during a portable caption drag.</summary>
 		internal Point CurrentPointerScreenPosition => PlatformHelper.GetCursorPosition();
 		internal Point PortableDragOffsetForDiagnostics => _portableDragOffset;
+
+		// Temporary diagnostics for the Linux drag investigation: whether the portable caption
+		// drag's position timer is running at all, and what position it last asked for.
+		internal static int PortableDragTickCount { get; private set; }
+		internal static string PortableDragLastRequest { get; private set; }
+		internal bool PortableNativeDraggingForDiagnostics => _portableNativeDragging;
 		private bool _internalCloseFlag = false;
 
 		/// <summary>
@@ -1268,10 +1274,15 @@ namespace AvalonDock.Controls
 			}
 
 			_portableLastPointer = PlatformHelper.GetCursorPosition();
-			PlatformHelper.SetWindowPosition(
-				this,
-				_portableLastPointer.X - _portableDragOffset.X,
-				_portableLastPointer.Y - _portableDragOffset.Y);
+			var requestedLeft = _portableLastPointer.X - _portableDragOffset.X;
+			var requestedTop = _portableLastPointer.Y - _portableDragOffset.Y;
+			PlatformHelper.SetWindowPosition(this, requestedLeft, requestedTop);
+			PortableDragTickCount++;
+			PortableDragLastRequest =
+				$"pointer={_portableLastPointer.X},{_portableLastPointer.Y} request={requestedLeft},{requestedTop} " +
+				$"logical={Left},{Top} handle={PlatformHelper.GetNativeWindowHandle(this)}";
+			if (PortableDragTickCount <= 3 || PortableDragTickCount % 30 == 0)
+				System.Console.Error.WriteLine($"[DRAG-TRACE] ticks={PortableDragTickCount} {PortableDragLastRequest}");
 			_dragService?.UpdateMouseLocation(_portableLastPointer);
 		}
 

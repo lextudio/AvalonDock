@@ -79,7 +79,24 @@ namespace AvalonDock.Platform
 		{
 			var windowHandle = GetNativeWindowHandle(window);
 			if (windowHandle != IntPtr.Zero)
+			{
 				PlatformManager.NativeWindowService.SetWindowPosition(windowHandle, x, y);
+				return;
+			}
+
+			// Not every portable window has a native handle to move: a chromeless floating window on
+			// Linux and every overlay window on macOS report none. For those the managed position IS
+			// the window position - Window.Left/Top forwards to the portable window host - so a
+			// silently dropped move would leave the window behind the pointer for the whole drag.
+			try
+			{
+				window.Left = x;
+				window.Top = y;
+			}
+			catch (InvalidOperationException)
+			{
+				// Mid-teardown; the window is going away anyway.
+			}
 		}
 
 		internal static Point GetWindowContentOrigin(Window window)

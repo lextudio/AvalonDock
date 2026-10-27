@@ -2073,6 +2073,13 @@ namespace TestApp
 					top = floatingOrigin.Y,
 					dragOffset = floating.PortableDragOffsetForDiagnostics,
 					currentPointer = floating.CurrentPointerScreenPosition,
+					// Temporary diagnostics for the Linux drag investigation.
+					windowLeft = floating.Left,
+					windowTop = floating.Top,
+					nativeOrigin = GetNativeWindowOrigin(floating),
+					dragTicks = LayoutFloatingWindowControl.PortableDragTickCount,
+					dragRequest = LayoutFloatingWindowControl.PortableDragLastRequest,
+					nativeDrag = floating.PortableNativeDraggingForDiagnostics,
 				};
 			}).ToArray());
 		}
