@@ -2780,8 +2780,21 @@ namespace TestApp
 			}
 
 			var ancestors = new List<string>();
+			string hitContentTitle = null;
 			for (var current = hit; current != null; current = VisualTreeHelper.GetParent(current))
 			{
+				// Which tab or pane the point is really on: a click on a clipped, overlapping tab can
+				// land on its neighbour while still hitting "a TextBlock".
+				if (hitContentTitle == null && current is FrameworkElement owner)
+				{
+					hitContentTitle = owner.DataContext switch
+					{
+						LayoutContent content => content.Title,
+						LayoutItem item => item.LayoutElement is LayoutContent model ? model.Title : null,
+						_ => null,
+					};
+				}
+
 				ancestors.Add(current.GetType().FullName);
 				if (ReferenceEquals(current, hitRoot))
 					break;
@@ -2795,6 +2808,7 @@ namespace TestApp
 				["managerY"] = managerPoint.Y,
 				["root"] = hitRoot?.GetType().FullName,
 				["hit"] = hit?.GetType().FullName,
+				["hitContentTitle"] = hitContentTitle,
 				["ancestors"] = ancestors,
 			});
 		}
@@ -2944,6 +2958,10 @@ namespace TestApp
 				topLeft = new Point(corners.Min(c => c.X), corners.Min(c => c.Y));
 				bottomRight = new Point(corners.Max(c => c.X), corners.Max(c => c.Y));
 			}
+			// What WPF itself thinks, next to the native frame the numbers below may come from: when the
+			// two disagree the window was not resized to its content (compare issue #174).
+			result["managedWidth"] = element.ActualWidth;
+			result["managedHeight"] = element.ActualHeight;
 			result["x"] = topLeft.X;
 			result["y"] = topLeft.Y;
 			result["width"] = bottomRight.X - topLeft.X;

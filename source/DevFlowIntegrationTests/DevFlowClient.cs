@@ -332,7 +332,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				{
 					await Task.Delay(150, ct).ConfigureAwait(false);
 					var after = await InvokeAsync("avd.input.query").ConfigureAwait(false);
-					Console.Error.WriteLine($"[click] ({x},{y}) hit={Truncate(before, 160)} input={Truncate(after, 600)}");
+					Console.Error.WriteLine($"[click] ({x},{y}) hit={Truncate(before, 700)} input={Truncate(after, 600)}");
 				}
 				catch (Exception ex) when (ex is not OperationCanceledException)
 				{

@@ -129,7 +129,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			// back and the content is clipped.
 			Assert.True(
 				bounds.Width >= 300 && bounds.Height >= 300,
-				$"The floating window should be sized to its content (at least 300x300); it is {bounds.Width}x{bounds.Height}.");
+				$"The floating window should be sized to its content (at least 300x300); it is {bounds.Width}x{bounds.Height}. Payload: {await client.InvokeAsync("avd.query.bounds", "floating-window")}");
 		}
 
 		private async Task CreateFloatingWindowAsync(DevFlowClient client)
