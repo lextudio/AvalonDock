@@ -197,6 +197,12 @@ jobs:
             exit 1
           fi
           echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/$native_dir" >> "$GITHUB_ENV"
+          # Recorded so a wgpu failure in the test step can be read against the actual stack: with
+          # automatic backend selection this says whether lavapipe was even reachable.
+          echo "--- Vulkan ICDs ---"
+          ls -l /usr/share/vulkan/icd.d 2>/dev/null || echo "no ICD directory"
+          echo "--- Vulkan/GL loaders ---"
+          ldconfig -p | grep -E 'libvulkan\.so|libEGL\.so|libGLX\.so|libOSMesa' || true
 
       # NuGet source mapping already makes GitHub Packages the only candidate for these prefixes
       # (the most specific pattern wins over nuget.org's `*`), but a package already present in the
@@ -223,22 +229,24 @@ jobs:
 
       - name: Test (DevFlow UI Tests)
         env:
-          # ProGPU renders through wgpu. Left to itself it picks the GLES/EGL backend, which on a
-          # headless runner dies creating the second window's surface:
-          #   wgpu-hal/src/gles/egl.rs unwrap() on Err(BadAccess) -> non-unwinding panic -> abort
-          # A docking test opens floating windows and a drop-target overlay, so a second surface is
-          # not optional. Force wgpu onto Vulkan and point it at Mesa's software rasteriser
-          # (lavapipe), which supports multiple window surfaces.
-          # WGPU_BACKEND had no effect - the crash stayed in the GLES/EGL backend - so ProGPU
-          # selects it itself and the env var is not consulted. Left in place in case a later build
-          # honours it, but the load-bearing setting is EGL_PLATFORM: without it Mesa has no DRI
-          # device to infer a platform from on a headless runner and can resolve to something other
-          # than X11, which is a plausible source of the BadAccess when a window surface is created.
-          WGPU_BACKEND: vulkan
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          # ProGPU renders through wgpu over GLFW, so the windowing environment has to look like a
+          # real X11 desktop with software rendering. These are the settings LibreWPF's own
+          # eng/progpu-wpf-linux-multi-window-smoke.sh uses - that harness opens several top-level
+          # windows, which is exactly what a docking test does with floating panes.
+          #
+          # Do not force a backend here. WGPU_BACKEND is not the knob ProGPU reads (it has
+          # PROGPU_WGPU_BACKEND, and explicit selection needs a ProGPU-owned wgpu-native), and
+          # asking for Vulkan on this runner aborted TestApp inside wgpuInstanceCreateSurface:
+          # wgpu-core instance.rs:521 unwraps the HAL surface, which is None when the instance has
+          # no backend at all, i.e. Vulkan had failed to initialise. Automatic selection keeps the
+          # GLES/EGL instance as a fallback, and Mesa resolves it to llvmpipe.
           EGL_PLATFORM: x11
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
+          # Prints ProGPU's [WGPUCONTEXT] trace: which backend the instance got, which adapter was
+          # requested and where surface creation stopped. TestApp's console log is uploaded as an
+          # artifact, so a failure here is diagnosable without another run.
+          PROGPU_BACKEND_DIAGNOSTICS: '1'
           DEVFLOW_TESTAPP_NO_BUILD: '1'
         working-directory: source/DevFlowIntegrationTests/bin/Debug/net10.0
         run: >
