@@ -157,15 +157,7 @@ namespace AvalonDock.Controls
 		/// <c>HwndHost.UsesPortableVisualHosting</c> exists only in LibreWPF. A Windows host compiles
 		/// against real WPF, where there is nothing to override (CS0115), and defines no LIBREWPF.
 		/// </remarks>
-		protected override bool UsesPortableVisualHosting
-		{
-			get
-			{
-				var src = PresentationSource.FromVisual(this);
-				System.Console.Error.WriteLine($"[HOST-TRACE] AutoHide UsesPortableVisualHosting={HostsContentAsVisualChild} source={src?.GetType().FullName} isHwndSource={src is System.Windows.Interop.HwndSource} os={System.Environment.OSVersion.Platform}");
-				return HostsContentAsVisualChild;
-			}
-		}
+		protected override bool UsesPortableVisualHosting => HostsContentAsVisualChild;
 #endif
 
 		/// <summary>
