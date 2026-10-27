@@ -1539,7 +1539,6 @@ namespace AvalonDock.Controls
 				// A portable visual-only host never sees BuildWindowCore, so its presenter has to exist
 				// before the HwndHost attaches it. Content is assigned by the object initializer in
 				// CoerceContentValue right after this constructor returns.
-				System.Console.Error.WriteLine($"[HOST-TRACE] {GetType().FullName} created portable={HostsContentAsVisualChild}");
 				if (HostsContentAsVisualChild) CreateRootPresenter();
 			}
 
@@ -1565,14 +1564,7 @@ namespace AvalonDock.Controls
 			/// <c>HwndHost.UsesPortableVisualHosting</c> exists only in LibreWPF. A Windows host compiles
 			/// against real WPF, where there is nothing to override (CS0115), and defines no LIBREWPF.
 			/// </remarks>
-			protected override bool UsesPortableVisualHosting
-			{
-				get
-				{
-					System.Console.Error.WriteLine($"[HOST-TRACE] FloatingWindowContentHost.UsesPortableVisualHosting -> {HostsContentAsVisualChild}");
-					return HostsContentAsVisualChild;
-				}
-			}
+			protected override bool UsesPortableVisualHosting => HostsContentAsVisualChild;
 #endif
 
 			/// <summary>
@@ -1651,7 +1643,6 @@ namespace AvalonDock.Controls
 			/// <inheritdoc/>
 			protected override HandleRef BuildWindowCore(HandleRef hwndParent)
 			{
-				System.Console.Error.WriteLine($"[HOST-TRACE] {GetType().FullName}.BuildWindowCore portable={HostsContentAsVisualChild} presenterView={_presenterIsVisualChild}");
 				// A rebuild must never orphan the native window of a previous build - its HWND would
 				// stay alive until the process ends (issue #587).
 				ReleaseHostedContent();
