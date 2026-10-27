@@ -112,8 +112,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AutoHideFlyout_IsResponsive_Issue10()
 		{
-			KnownLibreWpfGaps.SkipOnLibreWpf(KnownLibreWpfGaps.AutoHideClick);
-
 			using var client = await TryConnectAsync();
 
 			var anchorable = FindContent(await QueryLayoutAsync(client), "anchorables", "AutoHide1 Content");
@@ -135,6 +133,11 @@ namespace AvalonDock.DevFlowIntegrationTests
 					TimeSpan.FromSeconds(5),
 					$"Auto-hide flyout did not open on round {round} (Issue #10).");
 				var opened = watch.Elapsed;
+
+				// The flyout stays while the pointer is over its sidebar button (AvalonDock's own rule, on every
+				// backend), and the click left the pointer there, so move it into the document area first.
+				var manager = await client.QueryBoundsAsync("manager");
+				await client.DragMoveAsync(manager.X + manager.Width - 40, manager.Y + manager.Height - 40, TestContext.Current.CancellationToken);
 
 				await client.InvokeAsync("avd.document.activate", "document1");
 				await WaitUntilAsync(

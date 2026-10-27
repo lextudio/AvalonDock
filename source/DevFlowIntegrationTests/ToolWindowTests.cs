@@ -118,8 +118,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ClickAutoHideTab_OpensFlyout_Issue169()
 		{
-			KnownLibreWpfGaps.SkipOnLibreWpf(KnownLibreWpfGaps.AutoHideClick);
-
 			using var client = await TryConnectAsync();
 
 			var layout = await QueryLayoutAsync(client);
@@ -151,6 +149,11 @@ namespace AvalonDock.DevFlowIntegrationTests
 			Assert.Contains(
 				report.RootElement.GetProperty("textBoxes").EnumerateArray().Select(t => t.GetString() ?? string.Empty),
 				text => text.Contains("AutoHide Attached to Timer", StringComparison.Ordinal));
+
+			// The flyout stays while the pointer is over its sidebar button (AvalonDock's own rule, on every
+			// backend), and the click left the pointer there, so move it into the document area first.
+			var manager = await client.QueryBoundsAsync("manager");
+			await client.DragMoveAsync(manager.X + manager.Width - 40, manager.Y + manager.Height - 40, TestContext.Current.CancellationToken);
 
 			// Activating a document is how the sample dismisses the flyout.
 			await client.InvokeAsync("avd.document.activate", "document1");

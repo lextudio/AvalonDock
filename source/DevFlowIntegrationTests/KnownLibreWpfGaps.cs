@@ -32,9 +32,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 				Assert.Skip($"Known LibreWPF/macOS gap: {gap}");
 		}
 
-		public const string AutoHideClick =
-			"the auto-hide flyout opens on a click but is not dismissed afterwards (it stays open after a document is activated or on a second round)";
-
 		public const string MacNativeDrag =
 			"the cliclick-driven drag/resizer gesture does not reach AvalonDock on the macOS runner";
 	}

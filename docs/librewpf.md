@@ -721,7 +721,6 @@ test, so they are skipped on LibreWPF with the reason in the skip message;
 
 | Gap | Cases | Evidence |
 |---|---|---|
-| Auto-hide dismissal | `ClickAutoHideTab_OpensFlyout_Issue169`, `AutoHideFlyout_IsResponsive_Issue10` | The click gap is fixed in ProGPU (see below): the flyout opens now, and `AutoHideWithTextBoxes_ContentAccessible_Issue62` and `SaveLoadLayout_WithAutoHidePanels_Issue111` pass. What is left: the flyout stays open after a document is activated (#169) and does not close on round 1 (#10). Next step: trace `AutoHideWindowManager`'s close timer (`IsWin32MouseOver` on LibreWPF) |
 | Tool tab click | `ClickToolWindowTab_ActivatesIt_Issue375`, `ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` | Even with the pane widened to 300, the centre of Tool Window 1's tab header (as `TransformToAncestor` reports it) hit-tests to `Tool Window 2`, and that is what activates. The anchorable tab panel is arranged differently from WPF |
 | macOS native drag | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` (macOS only) | Failed on the macOS runner in every run since the matrix was added (the overlay never appears, the resizer never moves); Linux runs the same cases green through XTest |
 
@@ -1034,3 +1033,8 @@ Becomes simpler, with one honest caveat.
   package pipeline. AvalonDock was not changed for it. Verified on the Linux leg with the new packages:
   the flyout opens, 2 of the 4 auto-hide cases pass; the other two now fail later, on dismissal.
   The tool-tab click gap was a TestApp query bug and passes (3 cases un-skipped).
+- 2026-10-27 (auto-hide dismissal): not a LibreWPF gap. AvalonDock keeps the flyout open while the pointer is
+  over its sidebar button (`AutoHideWindowManager` close timer, `anchor.IsMouseOver`), the click had left the
+  pointer there, and on Windows these cases never ran in DevFlow (no native click in the real-WPF agent), so
+  the expectation had never been checked. The cases now move the pointer into the document area before
+  activating a document, and the skip is gone.
