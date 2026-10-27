@@ -46,7 +46,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		public DevFlowClient(int port)
 		{
 			_port = port;
-			_http = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}") };
+			_http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
 			_http.Timeout = TimeSpan.FromSeconds(20);
 		}
 
@@ -100,10 +100,14 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			var body = JsonSerializer.Serialize(new { args = args ?? Array.Empty<object>() });
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
+			var watch = Stopwatch.StartNew();
 			try
 			{
 				using var resp = await SendMutationAsync(HttpMethod.Post, $"/api/v1/invoke/actions/{action}", content, default).ConfigureAwait(false);
 				var raw = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+				// A restart per test makes slow round trips the dominant cost on slow runners; say which.
+				if (watch.ElapsedMilliseconds > 1000)
+					Console.Error.WriteLine($"[devflow-slow] {action} took {watch.ElapsedMilliseconds} ms");
 				if (!resp.IsSuccessStatusCode)
 					throw new HttpRequestException(
 						$"DevFlow action '{action}' returned {(int)resp.StatusCode}: {raw}");

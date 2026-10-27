@@ -231,7 +231,7 @@ public class DevFlowAppFixture : IAsyncLifetime
 
             try
             {
-                var response = await httpClient.GetAsync($"http://localhost:{_port}/api/v1/agent/status");
+                var response = await httpClient.GetAsync($"http://127.0.0.1:{_port}/api/v1/agent/status");
                 if (response.IsSuccessStatusCode)
                 {
                     // Per-test restarts make this the dominant cost on slow runners, so it is recorded.
