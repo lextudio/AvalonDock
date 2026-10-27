@@ -398,7 +398,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				DevFlowClient client, double fromX, double fromY, double toX, double toY,
 				CancellationToken ct, int holdMilliseconds = 10000)
 			{
-				if (NativeInputEnvironment.IsLinuxXInputAvailable)
+				if (NativeInputEnvironment.UsesAgentDecomposedInput)
 				{
 					await client.PressAsync(fromX, fromY, ct).ConfigureAwait(false);
 					for (var step = 1; step <= 24; step++)
@@ -570,13 +570,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 			}
 
 			/// <summary>
-			/// Moves the OS pointer. macOS shells out to cliclick; Linux goes through the agent's
-			/// XTest-backed move endpoint, so no external tool is involved.
+			/// Moves the OS pointer. macOS shells out to cliclick; Linux and Windows go through the agent's
+			/// XTest/SendInput-backed move endpoint, so no external tool is involved.
 			/// </summary>
 			private static async Task RunCliclickMoveAsync(
 				double screenX, double screenY, CancellationToken ct, DevFlowClient client = null)
 			{
-				if (NativeInputEnvironment.IsLinuxXInputAvailable && client != null)
+				if (NativeInputEnvironment.UsesAgentDecomposedInput && client != null)
 				{
 					// The Linux drag-move endpoint is a plain XTest motion event - the button state is
 					// held in the X server, so with nothing pressed this is simply a pointer move.

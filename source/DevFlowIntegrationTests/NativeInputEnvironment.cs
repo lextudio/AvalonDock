@@ -26,6 +26,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 			OperatingSystem.IsLinux() &&
 			!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
 
+		/// <summary>
+		/// The decomposed press/drag-move/release endpoints do the whole gesture inside the agent
+		/// (XTest on Linux, SendInput on Windows), so no external tool is involved. macOS is the only
+		/// platform where the tests drive cliclick themselves.
+		/// </summary>
+		public static bool UsesAgentDecomposedInput => IsLinuxXInputAvailable || OperatingSystem.IsWindows();
+
 		// Decomposed press/drag-move/release: WpfAgentService implements these via cliclick's
 		// CGEventPost wrapper on macOS, XTest on Linux and SendInput on Windows
 		// (WindowsNativeInput.TryMousePress/TryMouseDragMove/TryMouseRelease).
@@ -44,7 +51,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			// Linux drives the decomposed endpoints through XTest, which holds the button state across
 			// separate calls, so cliclick is not involved there.
-			if (IsLinuxXInputAvailable || OperatingSystem.IsWindows())
+			if (UsesAgentDecomposedInput)
 				return;
 
 			Assert.SkipUnless(RequiresCliclick,
