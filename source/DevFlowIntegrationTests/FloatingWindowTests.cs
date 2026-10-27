@@ -22,7 +22,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task NewFloatingWindow_CreatesFloatingWindow_Issue254()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var before = ReadArray(await QueryLayoutAsync(client), "floatingWindows").Count();
@@ -44,7 +43,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task FloatingWindow_CanBeActivated_Issue408()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await CreateFloatingWindowAsync(client);
@@ -74,7 +72,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task MainWindow_AccessibleWithFloatingWindow_Issue349()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await CreateFloatingWindowAsync(client);
@@ -97,7 +94,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task FloatingWindow_HasReasonableSize_Issue174()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await CreateFloatingWindowAsync(client);

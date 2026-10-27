@@ -23,7 +23,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task HideAndShowToolWindow_ViaMenu_Issue19()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// Hiding asks "are you sure you want to hide this tool?", which a headless run answers
@@ -59,7 +58,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AutoHideWithTextBoxes_ContentAccessible_Issue62()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var anchorable = FindContent(await QueryLayoutAsync(client), "anchorables", "AutoHide2 Content");
@@ -114,7 +112,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AutoHideFlyout_IsResponsive_Issue10()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var anchorable = FindContent(await QueryLayoutAsync(client), "anchorables", "AutoHide1 Content");
@@ -159,7 +156,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AddDynamicTools_DoesNotCrash_Issue382()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.document.activate", "document1");
@@ -188,7 +184,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ShowWinFormsWindowViaMenu_Works()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// A hidden WinForms window is shown again by the same menu entry that activates a visible

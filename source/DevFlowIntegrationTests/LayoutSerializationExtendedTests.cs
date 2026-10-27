@@ -22,7 +22,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_PreservesPaneRatio_Issue118()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var before = await client.QueryBoundsAsync("anchorable-pane", "toolWindow1");
@@ -49,7 +48,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task LoadLayoutAfterClosingDocument_DoesNotCrash_Issue38()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// The saved file lists Document 1 and Document 2 only.
@@ -82,7 +80,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task LayoutRestore_BringsBackDocuments_Issue83()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await SaveLayoutAsync(client, "Layout_4");
@@ -101,7 +98,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_WithAutoHidePanels_Issue111()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var anchorable = FindContent(await QueryLayoutAsync(client), "anchorables", "AutoHide1 Content");
@@ -133,7 +129,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_WithToolWindowStates_Issue59()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// A tool window is activated before the save: #59 was an InvalidOperationException during

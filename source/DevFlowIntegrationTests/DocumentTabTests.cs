@@ -21,7 +21,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ClickDocumentTab_ActivatesDocument_Issue511()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// The regression is in the tab's mouse-down handler, so the tab is clicked for real rather
@@ -38,7 +37,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SwitchBetweenDocumentTabs_Works()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await ClickTabAsync(client, "document-tab", "document2");
@@ -74,7 +72,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AddDocumentsViaButton_AppearsAsTabs_Issue493()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			using var content = JsonDocument.Parse(await client.InvokeAsync("avd.content", "document1"));
@@ -108,7 +105,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ActivateDocument_ContentIsAccessible_Issue240()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.document.activate", "document1");

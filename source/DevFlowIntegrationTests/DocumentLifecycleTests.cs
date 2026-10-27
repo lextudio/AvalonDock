@@ -28,7 +28,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task RapidTabClicking_DoesNotCrash_Issue7()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// #7 was a crash from clicking headers faster than the layout settled. Each click is a real
@@ -48,7 +47,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task CloseDocument_RemainingDocsAccessible_Issue204()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await AnswerAsync(client, "yes");
@@ -74,7 +72,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task CloseAndReAddDocuments_Works_Issue232()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await AnswerAsync(client, "yes");
@@ -111,7 +108,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task CanCloseFalse_CannotCloseWindow_Issue196()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// A close attempt may raise the hiding confirmation for other tool windows; answering yes
@@ -137,7 +133,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task CancelDocumentClose_DocumentRemains_Issue184()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			Assert.NotNull(FindContent(await QueryLayoutAsync(client), "documents", "Document 1"));

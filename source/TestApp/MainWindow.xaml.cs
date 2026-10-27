@@ -2145,27 +2145,41 @@ namespace TestApp
 			var source = PresentationSource.FromVisual(target) ?? PresentationSource.FromVisual(this);
 			var before = DescribeFocus();
 
-			var preview = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+			// A handler on the way can fail in the backend rather than in AvalonDock (LibreWPF has no
+			// Win32 keyboard state to ask for, for instance). That is reported, because the focus
+			// assertions are still meaningful, but an exception from the app itself is not: it means a
+			// key handler is broken and has to fail the action like any other defect.
+			string error = null;
+			var handled = false;
+			try
 			{
-				RoutedEvent = Keyboard.PreviewKeyDownEvent,
-			};
-			target.RaiseEvent(preview);
-
-			var handled = preview.Handled;
-			if (!handled)
-			{
-				var down = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+				var preview = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
 				{
-					RoutedEvent = Keyboard.KeyDownEvent,
+					RoutedEvent = Keyboard.PreviewKeyDownEvent,
 				};
-				target.RaiseEvent(down);
-				handled = down.Handled;
+				target.RaiseEvent(preview);
+
+				handled = preview.Handled;
+				if (!handled)
+				{
+					var down = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+					{
+						RoutedEvent = Keyboard.KeyDownEvent,
+					};
+					target.RaiseEvent(down);
+					handled = down.Handled;
+				}
+
+				target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
+				{
+					RoutedEvent = Keyboard.KeyUpEvent,
+				});
+			}
+			catch (Exception ex) when (IsBackendLimitation(ex))
+			{
+				error = ex.GetType().Name + ": " + ex.Message;
 			}
 
-			target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, parsedKey)
-			{
-				RoutedEvent = Keyboard.KeyUpEvent,
-			});
 			Dispatcher.Invoke(() => { }, DispatcherPriority.Input);
 
 			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
@@ -2175,6 +2189,7 @@ namespace TestApp
 				["handled"] = handled,
 				["focusBefore"] = before,
 				["focusAfter"] = DescribeFocus(),
+				["error"] = error,
 				["navigatorEnabled"] = dockManager.ShowNavigator,
 			});
 		}
@@ -2206,6 +2221,13 @@ namespace TestApp
 				["focus"] = DescribeFocus(),
 			});
 		}
+
+		/// <summary>
+		/// True when a platform backend cannot perform an operation at all (a missing entry point in a
+		/// Win32 shim, for example), as opposed to the app failing while performing it.
+		/// </summary>
+		private static bool IsBackendLimitation(Exception ex)
+			=> ex is EntryPointNotFoundException || ex is DllNotFoundException || ex is PlatformNotSupportedException;
 
 		private Dictionary<string, object> DescribeFocus()
 		{

@@ -14,10 +14,12 @@ namespace AvalonDock.DevFlowIntegrationTests
 	/// <para>
 	/// The FlaUI fixtures shared one application instance and relied on NUnit <c>[Order]</c> to make the
 	/// state each test inherited predictable. These suites run the same scenarios against one DevFlow
-	/// agent, but they start the application again per test: a restart is the only way back to the layout
-	/// TestApp declares in XAML (the layout model is rebuilt from XAML at startup, and serializing and
-	/// restoring it would drop the content the assertions look for). That costs a few seconds per test and
-	/// buys independence from the order the runner picks.
+	/// agent, but the application is started again before every test: a restart is the only way back to
+	/// the layout TestApp declares in XAML (the layout model is rebuilt from XAML at startup, and
+	/// serializing and restoring it would drop the content the assertions look for). That costs a few
+	/// seconds per test and buys independence from the order the runner picks - which matters here
+	/// because the older suites in the same collection deliberately replace the layout with their drag
+	/// test fixtures.
 	/// </para>
 	/// <para>
 	/// Assertions are the ones the FlaUI case made, except where the spec marks the original as vacuous
@@ -32,8 +34,18 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 		}
 
-		/// <summary>Restarts the application, which is how a test gets the startup layout back.</summary>
-		protected Task RestartAppAsync() => RestartTestAppAsync();
+		/// <summary>
+		/// Starts a fresh application before each test, so every case sees the XAML layout. The base
+		/// positions the window and arms the position guard once the new process is up, so an override
+		/// that skips <c>base.InitializeAsync</c> loses the restart as well.
+		/// </summary>
+		public override async ValueTask InitializeAsync()
+		{
+			if (Fixture != null)
+				await Fixture.RestartAsync();
+
+			await base.InitializeAsync();
+		}
 
 		protected async Task<JsonElement> QueryLayoutAsync(DevFlowClient client)
 		{

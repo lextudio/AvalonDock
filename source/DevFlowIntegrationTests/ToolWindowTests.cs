@@ -38,7 +38,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ClickToolWindowTab_ActivatesIt_Issue375()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// A real click on the tab's header, not a model change: #375 is about the tab's own
@@ -55,7 +54,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ToolWindowContent_IsAccessible()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await ClickTabAsync(client, "anchorable-tab", "toolWindow1");
@@ -81,7 +79,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ToolWindows_OnDifferentSides_AreAccessible()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// The FlaUI case only counted three tabs and checked no side at all. The two panes the
@@ -121,7 +118,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ClickAutoHideTab_OpensFlyout_Issue169()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var layout = await QueryLayoutAsync(client);
@@ -169,7 +165,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task NewFloatingWindow_CreatesFloatingToolWindow()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			var before = ReadArray(await QueryLayoutAsync(client), "floatingWindows").Count();

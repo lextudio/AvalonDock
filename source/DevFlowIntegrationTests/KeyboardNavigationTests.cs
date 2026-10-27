@@ -27,10 +27,22 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 		}
 
+		private static readonly string[] BackendLimitations =
+		{
+			"EntryPointNotFoundException", "DllNotFoundException", "PlatformNotSupportedException",
+		};
+
+		/// <summary>Accepts only the errors avd.input.key reports for "this backend cannot inject that key".</summary>
+		private static void AssertNoAppError(JsonElement result)
+		{
+			var error = ReadString(result, "error");
+			if (error != null)
+				Assert.Contains(BackendLimitations, limit => error.StartsWith(limit, StringComparison.Ordinal));
+		}
+
 		[Fact]
 		public async Task KeyboardInput_WorksInDocumentContent()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.document.activate", "document1");
@@ -55,7 +67,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task ArrowKeys_WorkWithoutCrash_Issue225()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// The regression needs a floating anchorable: that is where the drop-down area used to steal
@@ -81,6 +92,12 @@ namespace AvalonDock.DevFlowIntegrationTests
 				Assert.False(
 					after.GetProperty("isDropDownControlArea").GetBoolean(),
 					$"Pressing {key} moved focus to the drop-down area (Issue #225). State: {after.GetRawText()}");
+
+				// A handler on the way may be unable to run at all on a portable backend (the arrow-key
+				// navigation in LibreWPF reaches for Win32 keyboard state); that is reported in the
+				// payload. An exception from the app itself is not tolerated - the action only reports
+				// the ones that mean "this backend cannot do it".
+				AssertNoAppError(result.RootElement);
 			}
 
 			await AssertAppAliveAsync(client);
@@ -89,7 +106,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task TabKey_CyclesFocus()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.document.activate", "document1");
@@ -100,6 +116,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				using var result = JsonDocument.Parse(await client.InvokeAsync("avd.input.key", "Tab"));
 				var after = result.RootElement.GetProperty("focusAfter");
 				Assert.NotEqual(JsonValueKind.Null, after.GetProperty("type").ValueKind);
+				AssertNoAppError(result.RootElement);
 
 				await Task.Delay(50, TestContext.Current.CancellationToken);
 			}
@@ -110,7 +127,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task CtrlTab_SwitchesBetweenDocuments()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.document.activate", "document1");
@@ -122,6 +138,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			// What is asserted is therefore the app's own capability and that delivering the gesture is
 			// harmless; both documents must still be there afterwards.
 			Assert.True(result.RootElement.GetProperty("navigatorEnabled").GetBoolean(), "The docking manager has its navigator disabled.");
+			AssertNoAppError(result.RootElement);
 
 			var titles = DocumentTitles(await QueryLayoutAsync(client));
 			Assert.Contains("Document 1", titles);

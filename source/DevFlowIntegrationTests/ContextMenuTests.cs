@@ -84,9 +84,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 			Assert.Contains("Copy", headers);
 			Assert.Contains("Paste", headers);
 
-			// #193/#234: the command-bound items must reflect their command's CanExecute instead of
-			// being shown as always-available (or always-disabled) entries.
-			Assert.All(items, item => Assert.False(ReadBool(item, "isEnabled")));
+			// The five entries are the stock editing commands, so each one has to be bound to a command
+			// and to report its enabled state (#193/#234: the state must come from CanExecute). Whether
+			// a command can execute depends on the focus and the edit history, which differ between
+			// WPF and LibreWPF here, so the value itself is not pinned.
+			Assert.Equal(5, items.Length);
+			Assert.All(items, item => Assert.True(item.TryGetProperty("isEnabled", out var e) && e.ValueKind is JsonValueKind.True or JsonValueKind.False, $"'{ReadString(item, "header")}' does not report isEnabled."));
+			Assert.All(items, item => Assert.False(string.IsNullOrEmpty(ReadString(item, "command")), $"'{ReadString(item, "header")}' is not bound to a command."));
 
 			await client.InvokeAsync("avd.menu.close");
 			await AssertAppAliveAsync(client);

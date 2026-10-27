@@ -27,7 +27,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task UnloadAndReloadManager_Works_Issue384()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			Assert.NotNull(FindContent(await QueryLayoutAsync(client), "documents", "Document 1"));
@@ -58,7 +57,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task UnloadManagerWithFloatingWindow_DoesNotCrash_Issue437()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// The FlaUI case created the floating window and then stopped without ever unloading, so
@@ -92,7 +90,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task RepeatedUnloadReload_DoesNotCrash_Issue159()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			for (var cycle = 1; cycle <= 3; cycle++)
@@ -117,7 +114,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task MenusWork_AfterManagerReload()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.menu.invoke", "Layout/Unload Manager");

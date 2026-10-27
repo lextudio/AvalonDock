@@ -8,6 +8,7 @@
 // the suites use.
 using System;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Windows;
 using LeXtudio.DevFlow.Agent.Core;
 using Microsoft.Maui.DevFlow.Agent.Core;
@@ -28,9 +29,31 @@ namespace TestApp
 			var application = Application.Current
 				?? throw new InvalidOperationException("The sample application is not running.");
 
-			return application.Dispatcher.CheckAccess()
-				? action(ResolveWindow(application))
-				: application.Dispatcher.Invoke(() => action(ResolveWindow(application)));
+			// The exception is carried out of the dispatcher rather than thrown inside it: an exception
+			// that escapes a dispatcher callback is first offered to the dispatcher's unhandled-exception
+			// handler on the UI thread, and can end the process there before the caller ever sees it.
+			// Carrying it out means the agent reports one failed action instead.
+			ExceptionDispatchInfo failure = null;
+			T result = default;
+			void Run()
+			{
+				try
+				{
+					result = action(ResolveWindow(application));
+				}
+				catch (Exception ex)
+				{
+					failure = ExceptionDispatchInfo.Capture(ex);
+				}
+			}
+
+			if (application.Dispatcher.CheckAccess())
+				Run();
+			else
+				application.Dispatcher.Invoke(Run);
+
+			failure?.Throw();
+			return result;
 		}
 
 		private static MainWindow ResolveWindow(Application application) =>

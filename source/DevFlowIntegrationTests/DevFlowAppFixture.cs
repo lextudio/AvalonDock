@@ -46,8 +46,15 @@ public sealed class CodeAppFixture : DevFlowAppFixture
 public class DevFlowAppFixture : IAsyncLifetime
 {
     private Process _process;
+    // The CI job uploads ${{ runner.temp }}/avalondock-devflow-*.log, so the log has to be written
+    // there: on Windows Path.GetTempPath() is a per-user directory (%LOCALAPPDATA%\Temp) while the
+    // runner's temp is elsewhere (D:\a\_temp), and on the Unix runners it is /private/var/... rather
+    // than /tmp - the job uploads /tmp as well, but only the runner's own directory is guaranteed to be
+    // collected on every leg. Without RUNNER_TEMP (a developer machine) the old paths are kept.
     private static readonly string TestAppLogPathFormat = Path.Combine(
-        OperatingSystem.IsWindows() ? Path.GetTempPath() : "/tmp",
+        Environment.GetEnvironmentVariable("RUNNER_TEMP") is { Length: > 0 } runnerTemp
+            ? runnerTemp
+            : OperatingSystem.IsWindows() ? Path.GetTempPath() : "/tmp",
         "avalondock-devflow-{0}-{1}.log");
     private readonly object _logSync = new();
     private List<string> _hiddenAppNames = new();

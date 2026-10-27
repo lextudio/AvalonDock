@@ -29,7 +29,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task FloatingToolWindow_SystemClose_CanBeReshown_Issue368()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			using (JsonDocument.Parse(await client.InvokeAsync("avd.dialogs.answer", "yes")))

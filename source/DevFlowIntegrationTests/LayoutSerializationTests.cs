@@ -28,7 +28,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveAndLoadLayout_PreservesDocuments_Issue440()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			Assert.NotNull(FindContent(await QueryLayoutAsync(client), "documents", "Document 1"));
@@ -46,7 +45,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveAndLoadLayout_PreservesToolWindows_Issue392()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			Assert.NotNull(FindContent(await QueryLayoutAsync(client), "anchorables", "Tool Window 1"));
@@ -71,7 +69,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task LoadLayout_RestoresOriginalState()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await SaveLayoutAsync(client, "Layout_2");
@@ -102,7 +99,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveLoadLayout_DoesNotCrash_Issue167()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			// #167 was a serialisation error from a document floating window, so repetition is the
@@ -120,7 +116,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task AfterLayoutRestore_DocumentsAccessible_Issue443()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await SaveLayoutAsync(client, "Layout_4");
@@ -144,7 +139,6 @@ namespace AvalonDock.DevFlowIntegrationTests
 		[Fact]
 		public async Task SaveAndLoadLayout_RestoresDetachedWindow()
 		{
-			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
 			await client.InvokeAsync("avd.dialogs.answer", "yes");
