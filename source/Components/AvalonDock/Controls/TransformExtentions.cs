@@ -100,6 +100,9 @@ namespace AvalonDock.Controls
 				element.TransformActualSizeToAncestor());
 		}
 
+		/// <summary>Gets the part of the element that is visible on screen, in screen coordinates.</summary>
+		/// <param name="element">The element to measure.</param>
+		/// <returns>The visible area in screen coordinates.</returns>
 		internal static Rect GetVisibleScreenArea(this FrameworkElement element)
 		{
 			var localBounds = new Rect(0, 0, element.ActualWidth, element.ActualHeight);

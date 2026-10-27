@@ -17,6 +17,7 @@ namespace AvalonDock.Controls
 	/// <summary>
 	/// Represents the layout auto hide window control.
 	/// </summary>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "CA1506:Avoid excessive class coupling", Justification = "The control hosts the flyout and its platform-specific hooks; splitting it is tracked separately.")]
 	public class LayoutAutoHideWindowControl : HwndHost, ILayoutControl
 	{
 		/// <summary>
@@ -131,7 +132,7 @@ namespace AvalonDock.Controls
 		internal bool IsResizing { get; private set; }
 
 		/// <summary>
-		/// On portable backends (LibreWPF) a Win32 child window does not compose into the rendering
+		/// Gets a value indicating whether on portable backends (LibreWPF) a Win32 child window does not compose into the rendering
 		/// surface, so the flyout hosted in <see cref="_internalHwndSource"/> renders nothing at all.
 		/// There the content is added as an ordinary WPF visual child of this element instead, which
 		/// draws in place inside the docking manager's PART_AutoHideArea.

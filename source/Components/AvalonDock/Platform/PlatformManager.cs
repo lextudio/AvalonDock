@@ -31,7 +31,7 @@ namespace AvalonDock.Platform
 		internal static IDpiService DpiService =>
 			_dpiService ??= CreateDpiService();
 
-	private static INativeWindowService CreateNativeWindowService()
+		private static INativeWindowService CreateNativeWindowService()
 	{
 #if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -42,7 +42,7 @@ namespace AvalonDock.Platform
 		return new WindowsNativeWindowService();
 	}
 
-	private static ICursorService CreateCursorService()
+		private static ICursorService CreateCursorService()
 	{
 #if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -53,7 +53,7 @@ namespace AvalonDock.Platform
 		return new WindowsCursorService();
 	}
 
-	private static IDpiService CreateDpiService()
+		private static IDpiService CreateDpiService()
 	{
 #if LIBREWPF
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))

@@ -240,6 +240,5 @@ namespace AvalonDock.Controls
 		/// assembly still targets on Windows.
 		/// </summary>
 		private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
-
 	}
 }

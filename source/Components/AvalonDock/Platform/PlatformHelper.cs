@@ -17,9 +17,14 @@ namespace AvalonDock.Platform
 			internal IntPtr Value { get; }
 		}
 
+#if LIBREWPF
 		private static readonly ConditionalWeakTable<Window, NativeWindowHandle> NativeWindowHandles = new();
 		private static readonly Dictionary<IntPtr, WeakReference<Window>> NativeWindowOwners = new();
+#endif
 
+		/// <summary>Remembers the native handle of a window so it can be resolved back to the window.</summary>
+		/// <param name="window">The window to remember.</param>
+		/// <returns><c>true</c> when a handle was cached.</returns>
 		internal static bool CacheNativeWindowHandle(Window window)
 		{
 #if !LIBREWPF
@@ -51,6 +56,7 @@ namespace AvalonDock.Platform
 		/// <summary>
 		/// Gets the current cursor position in screen coordinates.
 		/// </summary>
+		/// <returns><c>true</c> when the left mouse button is pressed.</returns>
 		internal static Point GetCursorPosition()
 		{
 			var (x, y) = PlatformManager.CursorService.GetCursorPosition();
@@ -60,6 +66,7 @@ namespace AvalonDock.Platform
 		/// <summary>
 		/// Gets whether the left mouse button is pressed.
 		/// </summary>
+		/// <returns>The cursor position in screen coordinates.</returns>
 		internal static bool IsLeftButtonDown()
 		{
 			return PlatformManager.CursorService.IsLeftButtonDown();
@@ -69,12 +76,17 @@ namespace AvalonDock.Platform
 		/// Gets the window position in screen coordinates.
 		/// </summary>
 		/// <param name="windowHandle">The native window handle.</param>
+		/// <returns>The window position in screen coordinates.</returns>
 		internal static Point GetWindowPosition(IntPtr windowHandle)
 		{
 			var (x, y) = PlatformManager.NativeWindowService.GetWindowPosition(windowHandle);
 			return new Point(x, y);
 		}
 
+		/// <summary>Moves a window to a screen position through the platform's native window service.</summary>
+		/// <param name="window">The window to move.</param>
+		/// <param name="x">The left edge in screen coordinates.</param>
+		/// <param name="y">The top edge in screen coordinates.</param>
 		internal static void SetWindowPosition(Window window, double x, double y)
 		{
 			var windowHandle = GetNativeWindowHandle(window);
@@ -99,6 +111,9 @@ namespace AvalonDock.Platform
 			}
 		}
 
+		/// <summary>Gets the screen position of the window's content area (inside the frame).</summary>
+		/// <param name="window">The window to measure.</param>
+		/// <returns>The screen position of the top-left corner of the content area.</returns>
 		internal static Point GetWindowContentOrigin(Window window)
 		{
 			var windowHandle = GetNativeWindowHandle(window);
@@ -127,6 +142,7 @@ namespace AvalonDock.Platform
 		/// Other platforms keep the WindowInteropHelper value, which is what they used before.
 		/// </remarks>
 		/// <param name="window">The window whose native handle is needed.</param>
+		/// <returns>The native window handle.</returns>
 		internal static IntPtr GetNativeWindowHandle(Window window)
 		{
 			if (window == null)
@@ -200,6 +216,7 @@ namespace AvalonDock.Platform
 		/// <summary>
 		/// Gets the DPI scaling factor for the primary monitor.
 		/// </summary>
+		/// <returns>The DPI scaling factor.</returns>
 		internal static double GetPrimaryMonitorDpi()
 		{
 			return PlatformManager.DpiService.GetPrimaryMonitorDpi();
@@ -209,6 +226,7 @@ namespace AvalonDock.Platform
 		/// Gets the DPI scaling factor for the monitor containing the specified window.
 		/// </summary>
 		/// <param name="windowHandle">The native window handle.</param>
+		/// <returns>The DPI scaling factor.</returns>
 		internal static double GetMonitorDpi(IntPtr windowHandle)
 		{
 			return PlatformManager.DpiService.GetMonitorDpi(windowHandle);
@@ -217,6 +235,7 @@ namespace AvalonDock.Platform
 		/// <summary>
 		/// Gets the work area (excluding taskbar) of the primary monitor.
 		/// </summary>
+		/// <returns>The work area in screen coordinates.</returns>
 		internal static Rect GetPrimaryMonitorWorkArea()
 		{
 			return PlatformManager.DpiService.GetPrimaryMonitorWorkArea();
@@ -226,6 +245,7 @@ namespace AvalonDock.Platform
 		/// Gets the work area (excluding taskbar) of the monitor containing the specified window.
 		/// </summary>
 		/// <param name="windowHandle">The native window handle.</param>
+		/// <returns>The work area in screen coordinates.</returns>
 		internal static Rect GetMonitorWorkArea(IntPtr windowHandle)
 		{
 			return PlatformManager.DpiService.GetMonitorWorkArea(windowHandle);

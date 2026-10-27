@@ -19,24 +19,33 @@ namespace AvalonDock.Layout
 		None,
 
 		// ── Inner compass (5 zones, centered over the hovered pane) ─────────────
+
 		/// <summary>Tab-join: add as a tab in the target pane.</summary>
 		Center,
+
 		/// <summary>Split left within the document / anchorable area.</summary>
 		Left,
+
 		/// <summary>Split right within the document / anchorable area.</summary>
 		Right,
+
 		/// <summary>Split above within the document / anchorable area.</summary>
 		Top,
+
 		/// <summary>Split below within the document / anchorable area.</summary>
 		Bottom,
 
 		// ── Outer manager edge (4 zones, shown at the absolute edges of the DockingManager) ──
+
 		/// <summary>Dock a new anchorable pane at the left edge of the manager.</summary>
 		OuterLeft,
+
 		/// <summary>Dock a new anchorable pane at the right edge of the manager.</summary>
 		OuterRight,
+
 		/// <summary>Dock a new anchorable pane at the top edge of the manager.</summary>
 		OuterTop,
+
 		/// <summary>Dock a new anchorable pane at the bottom edge of the manager.</summary>
 		OuterBottom,
 	}
@@ -52,6 +61,13 @@ namespace AvalonDock.Layout
 		/// Apply a drop against explicit active targets selected by the UI layer.
 		/// Handles Center (tab-join) and inner split (Left/Right/Top/Bottom) semantics.
 		/// </summary>
+		/// <param name="content">The content being dropped.</param>
+		/// <param name="activeDocumentPane">The document pane under the pointer, if any.</param>
+		/// <param name="activeDocumentTabInsertIndex">The tab index to insert at in the document pane, or null to append.</param>
+		/// <param name="activeAnchorablePane">The anchorable pane under the pointer, if any.</param>
+		/// <param name="activeAnchorableTabInsertIndex">The tab index to insert at in the anchorable pane, or null to append.</param>
+		/// <param name="zone">The compass zone that was dropped on.</param>
+		/// <returns><c>true</c> when the content was inserted.</returns>
 		public static bool TryInsertToActiveTarget(
 			LayoutContent content,
 			LayoutDocumentPane activeDocumentPane,
@@ -90,6 +106,10 @@ namespace AvalonDock.Layout
 		/// (Center drop semantics). Optional <paramref name="tabInsertIndex"/> controls
 		/// insertion position; when null, content is appended.
 		/// </summary>
+		/// <param name="content">The content being dropped.</param>
+		/// <param name="targetPane">The pane that receives the content.</param>
+		/// <param name="tabInsertIndex">The tab index to insert at, or null to append.</param>
+		/// <returns><c>true</c> when the content was inserted.</returns>
 		public static bool TryInsertIntoTargetPane(LayoutContent content, ILayoutPanelElement targetPane, int? tabInsertIndex = null)
 		{
 			if (content == null || targetPane == null)
@@ -139,6 +159,10 @@ namespace AvalonDock.Layout
 		/// according to an inner split <paramref name="zone"/> (Left/Right/Top/Bottom).
 		/// Returns <c>false</c> when inputs are invalid or the target has no panel parent.
 		/// </summary>
+		/// <param name="content">The content being dropped.</param>
+		/// <param name="targetElement">The element the content is inserted beside.</param>
+		/// <param name="zone">The inner split zone (Left, Right, Top or Bottom).</param>
+		/// <returns><c>true</c> when the content was inserted.</returns>
 		public static bool TryInsertBesideTarget(LayoutContent content, ILayoutPanelElement targetElement, CompassDropZone zone)
 		{
 			if (content == null || targetElement == null)
@@ -184,14 +208,17 @@ namespace AvalonDock.Layout
 		///   Insert at the absolute outer edge of the <see cref="LayoutRoot.RootPanel"/>,
 		///   always as a <see cref="LayoutAnchorablePane"/>.
 		/// </summary>
+		/// <param name="root">The layout root that receives the content.</param>
+		/// <param name="content">The content being inserted.</param>
+		/// <param name="zone">The compass zone that was dropped on.</param>
 		public static void InsertPane(LayoutRoot root, LayoutContent content, CompassDropZone zone)
 		{
 			if (root?.RootPanel == null || content == null) return;
 			if (zone == CompassDropZone.None) return;
 
 			// ── Outer manager-edge zones ─────────────────────────────────────────
-			if (zone == CompassDropZone.OuterLeft  || zone == CompassDropZone.OuterRight ||
-			    zone == CompassDropZone.OuterTop   || zone == CompassDropZone.OuterBottom)
+			if (zone == CompassDropZone.OuterLeft || zone == CompassDropZone.OuterRight ||
+				zone == CompassDropZone.OuterTop || zone == CompassDropZone.OuterBottom)
 			{
 				InsertAtOuterEdge(root, content, zone);
 				return;
@@ -209,12 +236,11 @@ namespace AvalonDock.Layout
 		}
 
 		// ── Outer-edge insertion ─────────────────────────────────────────────────
-
 		private static void InsertAtOuterEdge(LayoutRoot root, LayoutContent content, CompassDropZone zone)
 		{
 			bool isHorizontal = zone == CompassDropZone.OuterLeft || zone == CompassDropZone.OuterRight;
-			bool isBefore     = zone == CompassDropZone.OuterLeft || zone == CompassDropZone.OuterTop;
-			var  orient       = isHorizontal ? Orientation.Horizontal : Orientation.Vertical;
+			bool isBefore = zone == CompassDropZone.OuterLeft || zone == CompassDropZone.OuterTop;
+			var orient = isHorizontal ? Orientation.Horizontal : Orientation.Vertical;
 
 			var newPane = CreatePaneForContent(content);
 			if (newPane == null) return;
@@ -224,7 +250,7 @@ namespace AvalonDock.Layout
 			{
 				// Same orientation — insert at the edge.
 				if (isBefore) rootPanel.Children.Insert(0, newPane);
-				else          rootPanel.Children.Add(newPane);
+				else rootPanel.Children.Add(newPane);
 			}
 			else
 			{
@@ -233,7 +259,6 @@ namespace AvalonDock.Layout
 		}
 
 		// ── Center (tab-join) ────────────────────────────────────────────────────
-
 		private static void InsertCenter(LayoutRoot root, LayoutContent content)
 		{
 			if (content is LayoutDocument)
@@ -274,7 +299,6 @@ namespace AvalonDock.Layout
 		}
 
 		// ── Inner directional split ───────────────────────────────────────────────
-
 		private static void InsertInnerSplit(LayoutRoot root, LayoutContent content, CompassDropZone zone)
 		{
 			if (zone != CompassDropZone.Left && zone != CompassDropZone.Right &&
@@ -283,9 +307,9 @@ namespace AvalonDock.Layout
 				return;
 			}
 
-			bool isHorizontal = zone == CompassDropZone.Left  || zone == CompassDropZone.Right;
-			bool isBefore     = zone == CompassDropZone.Left  || zone == CompassDropZone.Top;
-			var  orient       = isHorizontal ? Orientation.Horizontal : Orientation.Vertical;
+			bool isHorizontal = zone == CompassDropZone.Left || zone == CompassDropZone.Right;
+			bool isBefore = zone == CompassDropZone.Left || zone == CompassDropZone.Top;
+			var orient = isHorizontal ? Orientation.Horizontal : Orientation.Vertical;
 
 			var newPane = CreatePaneForContent(content);
 			if (newPane == null) return;
@@ -311,7 +335,7 @@ namespace AvalonDock.Layout
 			if (rootPanel.Orientation == orient)
 			{
 				if (isBefore) rootPanel.Children.Insert(0, newPane);
-				else          rootPanel.Children.Add(newPane);
+				else rootPanel.Children.Add(newPane);
 			}
 			else
 			{
@@ -345,6 +369,7 @@ namespace AvalonDock.Layout
 				splitPanel.Children.Add(targetElement);
 				splitPanel.Children.Add(newPane);
 			}
+
 			parentPanel.InsertChildAt(targetIndex, splitPanel);
 		}
 

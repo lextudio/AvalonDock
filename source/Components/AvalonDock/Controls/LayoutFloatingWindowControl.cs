@@ -25,6 +25,7 @@ namespace AvalonDock.Controls
 	/// <summary>
 	/// Represents the layout floating window control.
 	/// </summary>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "CA1506:Avoid excessive class coupling", Justification = "The control owns the floating window lifetime, drag and sizing for every platform; splitting it is tracked separately.")]
 	public abstract class LayoutFloatingWindowControl : Window, ILayoutControl
 	{
 		private ResourceDictionary currentThemeResourceDictionary; // = null
@@ -36,19 +37,24 @@ namespace AvalonDock.Controls
 		private DragService _dragService = null;
 
 		/// <summary>
-		/// The <see cref="DragService"/> driving the current drag of this floating window, or null when
+		/// Gets the <see cref="DragService"/> driving the current drag of this floating window, or null when
 		/// no drag is in progress. Test-only surface (see TestInternalsVisibleTo.cs): lets a test query
 		/// the live compass drop-target geometry (<see cref="DragService.CurrentOverlayWindow"/>) by
 		/// <see cref="DropTargetType"/> during a real drag, instead of guessing screen offsets.
 		/// </summary>
 		internal DragService CurrentDragService => _dragService;
 
-		/// <summary>The live OS cursor position, in screen coordinates. Test-only surface used to verify
+		/// <summary>Gets the live OS cursor position, in screen coordinates. Test-only surface used to verify
 		/// that this window's position tracks the pointer during a portable caption drag.</summary>
 		internal Point CurrentPointerScreenPosition => PlatformHelper.GetCursorPosition();
+
+		/// <summary>Gets the drag offset of a portable caption drag (read by diagnostics).</summary>
 		internal Point PortableDragOffsetForDiagnostics => _portableDragOffset;
 
+		/// <summary>Gets a value indicating whether a native window drag is in progress (read by diagnostics).</summary>
 		internal bool PortableNativeDraggingForDiagnostics => _portableNativeDragging;
+
+		/// <summary>Gets a value indicating whether a portable caption drag is in progress (read by diagnostics).</summary>
 		internal bool PortableDraggingForDiagnostics => _portableDragging;
 		private bool _internalCloseFlag = false;
 
@@ -467,9 +473,9 @@ namespace AvalonDock.Controls
 					{
 					var mousePosition = PlatformHelper.GetCursorPosition();
 					_dragService.Drop(mousePosition, out var dropFlag);
-						_dragService = null;
-						SetIsDragging(false);
-						if (dropFlag) InternalClose();
+					_dragService = null;
+					SetIsDragging(false);
+					if (dropFlag) InternalClose();
 					}
 
 					break;
@@ -707,6 +713,7 @@ namespace AvalonDock.Controls
 			base.OnInitialized(e);
 		}
 
+		/// <summary>Copies the inherited dependency properties from the docking manager onto this window.</summary>
 		internal void SyncInheritedProperties()
 		{
 			foreach (var property in InheritableProperties.Value)
@@ -846,6 +853,7 @@ namespace AvalonDock.Controls
 				_hwndSrcHook = FilterMessage;
 				_hwndSrc.AddHook(_hwndSrcHook);
 			}
+
 			// Restore maximize state
 			var maximized = Model.Descendents().OfType<ILayoutElementForFloatingWindow>().Any(l => l.IsMaximized);
 			UpdateMaximizedState(maximized);
@@ -1161,8 +1169,6 @@ namespace AvalonDock.Controls
 			_dragService.UpdateMouseLocation(mousePosition);
 		}
 
-		#region Portable (non-HWND) caption drag
-
 		// Managed replacement for the Win32 caption drag on backends without an HwndSource (LibreWPF).
 		// A press on the caption starts a mouse-captured move: each move repositions the window to
 		// follow the pointer and feeds the DragService (which shows the OverlayWindow drop targets),
@@ -1194,6 +1200,8 @@ namespace AvalonDock.Controls
 
 		// The Win32 caption-drag path (WM_NCLBUTTONDOWN + WM_MOVING/WM_EXITSIZEMOVE) only works on real
 		// Windows HWNDs. Everywhere else (LibreWPF on macOS/Linux) use the managed caption drag.
+
+		/// <summary>Gets a value indicating whether the managed caption drag replaces the Win32 one.</summary>
 		internal static bool UsePortableCaptionDrag { get; } = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
 		/// <summary>
@@ -1337,7 +1345,7 @@ namespace AvalonDock.Controls
 		/// </summary>
 		/// <remarks>
 		/// The window is being moved to follow the pointer, so asking WPF for the position inside
-		/// this window and projecting it through <see cref="UIElement.PointToScreen"/> measures
+		/// this window and projecting it through <see cref="Visual.PointToScreen"/> measures
 		/// against wherever the backend has actually put the window, not where the last move asked
 		/// it to go; on a backend that applies moves asynchronously the two disagree and the drag
 		/// drifts behind the pointer. Ask the backend for the pointer itself instead. A cursor
@@ -1404,6 +1412,7 @@ namespace AvalonDock.Controls
 				e.Handled = true;
 				return;
 			}
+
 			if (e.ChangedButton != MouseButton.Left)
 				return;
 			if (Model?.Root?.Manager == null)
@@ -1564,12 +1573,11 @@ namespace AvalonDock.Controls
 			SetIsDragging(false);
 		}
 
+		/// <summary>Completes a portable caption drag from outside the window (read by diagnostics).</summary>
 		internal void CompletePortableDragForDiagnostics()
 		{
 			EndPortableDrag(drop: true);
 		}
-
-		#endregion Portable (non-HWND) caption drag
 
 		/// <summary>
 		/// Ends a drag operation that is still in progress without dropping anything.

@@ -16,7 +16,7 @@ namespace AvalonDock.Controls
 			new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsMeasure | FrameworkPropertyMetadataOptions.AffectsArrange));
 
 		/// <summary>
-		/// Gets or sets whether tabs wrap onto additional rows when they do not fit within the available width.
+		/// Gets or sets a value indicating whether gets or sets whether tabs wrap onto additional rows when they do not fit within the available width.
 		/// </summary>
 		public bool WrapTabs
 		{

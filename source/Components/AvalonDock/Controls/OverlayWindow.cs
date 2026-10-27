@@ -59,7 +59,7 @@ namespace AvalonDock.Controls
 		private LayoutFloatingWindowControl _floatingWindow = null;
 		private readonly List<IDropArea> _visibleAreas = new List<IDropArea>();
 
-		/// <summary>Debug/diagnostic only: when true, every overlay window paints a bright outline at
+		/// <summary>Gets or sets a value indicating whether debug/diagnostic only: when true, every overlay window paints a bright outline at
 		/// its own edges so its exact on-screen bounds are visible against the otherwise fully
 		/// transparent background. Lets a test (or a human) see at a glance whether the overlay window
 		/// coincides with the DockingManager or bleeds over other chrome such as the main menu.</summary>
@@ -109,6 +109,7 @@ namespace AvalonDock.Controls
 			UpdateThemeResources();
 		}
 
+		/// <summary>Moves the native window to the position WPF reports for it (portable backends only).</summary>
 		internal void AlignNativePosition()
 		{
 			PlatformHelper.SetWindowPosition(this, Left, Top);
@@ -132,6 +133,7 @@ namespace AvalonDock.Controls
 			PlatformHelper.SetWindowPosition(this, left, top);
 		}
 
+		/// <summary>Re-applies the native position while a drag is in progress so the overlay does not drift.</summary>
 		internal void EnsureNativePositionDuringDrag()
 		{
 			PlatformHelper.CacheNativeWindowHandle(this);
@@ -444,6 +446,7 @@ namespace AvalonDock.Controls
 		}
 
 		/// <inheritdoc/>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "CA1502:Avoid excessive complexity", Justification = "One branch per compass target of the overlay.")]
 		IEnumerable<IDropTarget> IOverlayWindow.GetTargets()
 		{
 			// Closing/docking detaches the floating model before the drag service releases its
@@ -480,7 +483,7 @@ namespace AvalonDock.Controls
 
 							var parentPaneModel = dropAreaAnchorablePane.AreaElement.Model as LayoutAnchorablePane;
 							LayoutAnchorableTabItem lastAreaTabItem = null;
-								foreach (var dropAreaTabItem in dropAreaAnchorablePane.AreaElement.FindVisualChildren<LayoutAnchorableTabItem>())
+							foreach (var dropAreaTabItem in dropAreaAnchorablePane.AreaElement.FindVisualChildren<LayoutAnchorableTabItem>())
 								{
 									var tabItemModel = dropAreaTabItem.Model as LayoutAnchorable;
 									lastAreaTabItem = lastAreaTabItem == null || lastAreaTabItem.GetScreenArea().Right < dropAreaTabItem.GetScreenArea().Right ?
@@ -491,7 +494,7 @@ namespace AvalonDock.Controls
 										yield return new AnchorablePaneDropTarget(dropAreaAnchorablePane.AreaElement, tabScreenArea, DropTargetType.AnchorablePaneDockInside, tabIndex);
 								}
 
-								if (lastAreaTabItem != null)
+							if (lastAreaTabItem != null)
 								{
 									var lastAreaTabItemScreenArea = lastAreaTabItem.GetScreenArea();
 									var newAreaTabItemScreenArea = new Rect(lastAreaTabItemScreenArea.TopRight, new Point(lastAreaTabItemScreenArea.Right + lastAreaTabItemScreenArea.Width, lastAreaTabItemScreenArea.Bottom));
@@ -500,8 +503,8 @@ namespace AvalonDock.Controls
 										yield return new AnchorablePaneDropTarget(dropAreaAnchorablePane.AreaElement, newAreaTabItemScreenArea, DropTargetType.AnchorablePaneDockInside, parentPaneModel.Children.Count);
 								}
 
-								var dropAreaTitle = dropAreaAnchorablePane.AreaElement.FindVisualChildren<AnchorablePaneTitle>().FirstOrDefault();
-								if (dropAreaTitle != null)
+							var dropAreaTitle = dropAreaAnchorablePane.AreaElement.FindVisualChildren<AnchorablePaneTitle>().FirstOrDefault();
+							if (dropAreaTitle != null)
 								{
 									var titleScreenArea = ClipToOverlayBounds(dropAreaTitle.GetScreenArea());
 									if (!titleScreenArea.IsEmpty)
@@ -533,7 +536,7 @@ namespace AvalonDock.Controls
 
 								var parentPaneModel = dropAreaDocumentPane.AreaElement.Model as LayoutDocumentPane;
 								LayoutDocumentTabItem lastAreaTabItem = null;
-									foreach (var dropAreaTabItem in dropAreaDocumentPane.AreaElement.FindVisualChildren<LayoutDocumentTabItem>())
+								foreach (var dropAreaTabItem in dropAreaDocumentPane.AreaElement.FindVisualChildren<LayoutDocumentTabItem>())
 									{
 										var tabItemModel = dropAreaTabItem.Model;
 										lastAreaTabItem = lastAreaTabItem == null || lastAreaTabItem.GetScreenArea().Right < dropAreaTabItem.GetScreenArea().Right ?
@@ -580,7 +583,7 @@ namespace AvalonDock.Controls
 
 								var parentPaneModel = dropAreaDocumentPane.AreaElement.Model as LayoutDocumentPane;
 								LayoutDocumentTabItem lastAreaTabItem = null;
-									foreach (var dropAreaTabItem in dropAreaDocumentPane.AreaElement.FindVisualChildren<LayoutDocumentTabItem>())
+								foreach (var dropAreaTabItem in dropAreaDocumentPane.AreaElement.FindVisualChildren<LayoutDocumentTabItem>())
 									{
 										var tabItemModel = dropAreaTabItem.Model;
 										lastAreaTabItem = lastAreaTabItem == null || lastAreaTabItem.GetScreenArea().Right < dropAreaTabItem.GetScreenArea().Right ?

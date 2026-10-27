@@ -621,7 +621,7 @@ namespace AvalonDock
 			new FrameworkPropertyMetadata(false));
 
 		/// <summary>
-		/// Gets or sets whether document tabs wrap onto additional rows when they do not fit in a document pane.
+		/// Gets or sets a value indicating whether gets or sets whether document tabs wrap onto additional rows when they do not fit in a document pane.
 		/// </summary>
 		/// <remarks>
 		/// The default is <see langword="false"/>, which preserves the traditional single-row tab strip and overflow menu behavior.

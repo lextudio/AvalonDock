@@ -10,6 +10,7 @@ namespace AvalonDock.Platform
 	/// </summary>
 	internal class WindowsCursorService : ICursorService
 	{
+		/// <inheritdoc/>
 		public (double X, double Y) GetCursorPosition()
 		{
 			if (GetCursorPos(out var point))
@@ -17,24 +18,25 @@ namespace AvalonDock.Platform
 			return (0, 0);
 		}
 
+		/// <inheritdoc/>
 		public bool IsLeftButtonDown()
 		{
 			return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 		}
 
+		/// <inheritdoc/>
 		public (double X, double Y) GetCursorLocationQuartz()
 		{
 			// On Windows, Quartz coordinates are the same as screen coordinates
 			return GetCursorPosition();
 		}
 
+		/// <inheritdoc/>
 		public (double X, double Y) GetCursorLocationCocoa()
 		{
 			// On Windows, return screen coordinates (no Cocoa conversion needed)
 			return GetCursorPosition();
 		}
-
-		#region Native Methods
 
 		[DllImport("user32.dll")]
 		[return: MarshalAs(UnmanagedType.Bool)]
@@ -51,7 +53,5 @@ namespace AvalonDock.Platform
 		}
 
 		private const int VK_LBUTTON = 0x01;
-
-		#endregion
 	}
 }

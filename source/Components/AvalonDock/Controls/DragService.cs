@@ -28,13 +28,17 @@ namespace AvalonDock.Controls
 		private bool _isUpdatingMouseLocation;
 
 		/// <summary>
-		/// The overlay window currently showing compass drop-target indicators for whichever host the
+		/// Gets the overlay window currently showing compass drop-target indicators for whichever host the
 		/// pointer is presently over, or null between/before drag positions have selected a host. Test-only
 		/// accessor (see TestInternalsVisibleTo.cs) so a test can enumerate <see cref="IOverlayWindow.GetTargets"/>
 		/// by <see cref="DropTargetType"/> and get each indicator's real screen bounds during a live drag.
 		/// </summary>
 		internal IOverlayWindow CurrentOverlayWindow => _currentWindow;
+
+		/// <summary>Gets the drop target the pointer is currently over, if any (read by diagnostics).</summary>
 		internal IDropTarget CurrentDropTarget => _currentDropTarget;
+
+		/// <summary>Gets the type of the drop target the pointer is currently over, if any (read by diagnostics).</summary>
 		internal string CurrentDropTargetType => _currentDropTarget?.Type.ToString();
 
 		/// <summary>
@@ -115,7 +119,7 @@ namespace AvalonDock.Controls
 					_currentHost = null;
 				}
 
-					if (_currentHost != newHost && newHost != null)
+				if (_currentHost != newHost && newHost != null)
 					{
 						_currentHost = newHost;
 						_currentWindow = _currentHost.ShowOverlayWindow(_floatingWindow);
@@ -124,10 +128,11 @@ namespace AvalonDock.Controls
 							_currentHost = null;
 							return;
 						}
+
 						_currentWindow.DragEnter(_floatingWindow);
 
 					// Set the target window to topmost
-					if (_currentHost is LayoutFloatingWindowControl fwc &&
+						if (_currentHost is LayoutFloatingWindowControl fwc &&
 						(fwc.OwnedByDockingManagerWindow == _floatingWindow.OwnedByDockingManagerWindow || fwc.OwnedByDockingManagerWindow))
 					{
 						BringWindowToTop2(fwc);
@@ -137,10 +142,10 @@ namespace AvalonDock.Controls
 						BringWindowToTop2(Window.GetWindow(dockingManager));
 					}
 
-					GetOverlayWindowHosts();
+						GetOverlayWindowHosts();
 
-					BringWindowToTop2(_floatingWindow);
-					if (_currentWindow is Window overlayWindow)
+						BringWindowToTop2(_floatingWindow);
+						if (_currentWindow is Window overlayWindow)
 					{
 						BringWindowToTop2(overlayWindow);
 					}

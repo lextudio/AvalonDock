@@ -10,6 +10,7 @@ namespace AvalonDock.Platform
 	/// </summary>
 	internal class WindowsDpiService : IDpiService
 	{
+		/// <inheritdoc/>
 		public double GetPrimaryMonitorDpi()
 		{
 			var hdc = GetDC(IntPtr.Zero);
@@ -27,6 +28,7 @@ namespace AvalonDock.Platform
 			}
 		}
 
+		/// <inheritdoc/>
 		public double GetMonitorDpi(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return GetPrimaryMonitorDpi();
@@ -45,6 +47,7 @@ namespace AvalonDock.Platform
 			}
 		}
 
+		/// <inheritdoc/>
 		public Rect GetPrimaryMonitorWorkArea()
 		{
 			var monitorInfo = new MONITORINFO();
@@ -61,6 +64,7 @@ namespace AvalonDock.Platform
 			return new Rect(0, 0, 1920, 1080); // Fallback
 		}
 
+		/// <inheritdoc/>
 		public Rect GetMonitorWorkArea(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return GetPrimaryMonitorWorkArea();
@@ -78,8 +82,6 @@ namespace AvalonDock.Platform
 
 			return GetPrimaryMonitorWorkArea();
 		}
-
-		#region Native Methods
 
 		[DllImport("user32.dll")]
 		private static extern IntPtr GetDC(IntPtr hWnd);
@@ -118,7 +120,5 @@ namespace AvalonDock.Platform
 		private const int LOGPIXELSX = 88;
 		private const int LOGPIXELSY = 90;
 		private const uint MONITOR_DEFAULTTONEAREST = 2;
-
-		#endregion
 	}
 }

@@ -10,6 +10,7 @@ namespace AvalonDock.Platform
 	/// </summary>
 	internal class WindowsNativeWindowService : INativeWindowService
 	{
+		/// <inheritdoc/>
 		public (double X, double Y) GetWindowPosition(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return (0, 0);
@@ -18,6 +19,7 @@ namespace AvalonDock.Platform
 			return (rect.Left, rect.Top);
 		}
 
+		/// <inheritdoc/>
 		public void SetWindowPosition(IntPtr windowHandle, double x, double y)
 		{
 			if (windowHandle == IntPtr.Zero) return;
@@ -26,6 +28,7 @@ namespace AvalonDock.Platform
 				SetWindowPosFlags.IgnoreResize | SetWindowPosFlags.NoActivate);
 		}
 
+		/// <inheritdoc/>
 		public (double X, double Y, double Width, double Height) GetWindowFrame(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return (0, 0, 0, 0);
@@ -34,6 +37,7 @@ namespace AvalonDock.Platform
 			return (rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
 		}
 
+		/// <inheritdoc/>
 		public void BringToFront(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return;
@@ -41,6 +45,7 @@ namespace AvalonDock.Platform
 			BringWindowToTop(windowHandle);
 		}
 
+		/// <inheritdoc/>
 		public void CloseWindow(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return;
@@ -48,11 +53,13 @@ namespace AvalonDock.Platform
 			DestroyWindow(windowHandle);
 		}
 
+		/// <inheritdoc/>
 		public void DisableWindowTabbing(IntPtr windowHandle)
 		{
 			// No-op on Windows - tabbing is not a concept in Win32
 		}
 
+		/// <inheritdoc/>
 		public void SetWindowAlpha(IntPtr windowHandle, double alpha)
 		{
 			if (windowHandle == IntPtr.Zero) return;
@@ -62,6 +69,7 @@ namespace AvalonDock.Platform
 			SetLayeredWindowAttributes(windowHandle, 0, (byte)(alpha * 255), LWA_ALPHA);
 		}
 
+		/// <inheritdoc/>
 		public void SetWindowLevel(IntPtr windowHandle, int level)
 		{
 			if (windowHandle == IntPtr.Zero) return;
@@ -79,6 +87,7 @@ namespace AvalonDock.Platform
 				SetWindowPosFlags.DoNotActivate | SetWindowPosFlags.DoNotChangeOwnerZOrder);
 		}
 
+		/// <inheritdoc/>
 		public (double X, double Y, double Width, double Height) GetContentViewFrame(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return (0, 0, 0, 0);
@@ -87,6 +96,7 @@ namespace AvalonDock.Platform
 			return (0, 0, rect.Right - rect.Left, rect.Bottom - rect.Top);
 		}
 
+		/// <inheritdoc/>
 		public (double X, double Y) GetWindowContentOrigin(IntPtr windowHandle)
 		{
 			if (windowHandle == IntPtr.Zero) return (0, 0);
@@ -95,8 +105,6 @@ namespace AvalonDock.Platform
 			ClientToScreen(windowHandle, ref point);
 			return (point.X, point.Y);
 		}
-
-		#region Native Methods
 
 		[DllImport("user32.dll")]
 		[return: MarshalAs(UnmanagedType.Bool)]
@@ -159,7 +167,5 @@ namespace AvalonDock.Platform
 		private static readonly IntPtr HWND_TOP = IntPtr.Zero;
 		private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
 		private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
-
-		#endregion
 	}
 }
