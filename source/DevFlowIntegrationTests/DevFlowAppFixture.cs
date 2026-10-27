@@ -208,10 +208,10 @@ public class DevFlowAppFixture : IAsyncLifetime
 
         try
         {
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            using var resp = await httpClient.PostAsync(
-                $"http://localhost:{Port}/api/v1/invoke/actions/avd.activate",
-                new StringContent("{\"args\":[]}", Encoding.UTF8, "application/json"));
+            // Through DevFlowClient so the call carries the mutation lease (avd.activate moves the
+            // app window, and the agent rejects any mutation that arrives without one).
+            using var client = new DevFlowClient(Port);
+            await client.InvokeAsync("avd.activate");
         }
         catch
         {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -21,10 +22,29 @@ namespace AvalonDock.DevFlowIntegrationTests
 	// when no sample is running, so the default (headless) test run stays green.
 	public sealed class DevFlowClient : IDisposable
 	{
+		// The agent rejects every mutation with 409 unless the request carries a mutation lease
+		// (AgentOptions.RequireMutationLease defaults to true). The lease is claimed from
+		// /api/v1/agent/lease and echoed in X-DevFlow-Lease; an agent that predates leases answers
+		// that endpoint with 404, which is treated as "every mutation is allowed".
+		private const string LeaseEndpoint = "/api/v1/agent/lease";
+		private const string LeaseHeader = "X-DevFlow-Lease";
+		private const string HolderHeader = "X-DevFlow-Holder";
+		private const string HolderKind = "test";
+
+		// Lease ids are kept per agent port and shared by every client in this process; see
+		// AcquireLeaseAsync. The gate serializes the initial claim so two clients cannot race and
+		// steal the lease from each other.
+		private static readonly object LeaseSync = new();
+		private static readonly SemaphoreSlim LeaseGate = new(1, 1);
+		private static readonly Dictionary<int, string> LeaseIds = new();
+		private static readonly HashSet<int> UnleasedPorts = new();
+
 		private readonly HttpClient _http;
+		private readonly int _port;
 
 		public DevFlowClient(int port)
 		{
+			_port = port;
 			_http = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}") };
 			_http.Timeout = TimeSpan.FromSeconds(20);
 		}
@@ -81,7 +101,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
 			try
 			{
-				using var resp = await _http.PostAsync($"/api/v1/invoke/actions/{action}", content).ConfigureAwait(false);
+				using var resp = await SendMutationAsync(HttpMethod.Post, $"/api/v1/invoke/actions/{action}", content, default).ConfigureAwait(false);
 				var raw = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
 				if (!resp.IsSuccessStatusCode)
 					throw new HttpRequestException(
@@ -94,11 +114,122 @@ namespace AvalonDock.DevFlowIntegrationTests
 			}
 		}
 
+		/// <summary>
+		/// Sends a mutating request, claiming the agent's mutation lease first when this process does
+		/// not hold it yet.
+		/// </summary>
+		private async Task<HttpResponseMessage> SendMutationAsync(HttpMethod method, string path, HttpContent content, CancellationToken ct)
+		{
+			var leaseId = await AcquireLeaseAsync(ct).ConfigureAwait(false);
+			using var request = new HttpRequestMessage(method, path) { Content = content };
+			if (leaseId != null)
+			{
+				request.Headers.TryAddWithoutValidation(LeaseHeader, leaseId);
+				request.Headers.TryAddWithoutValidation(HolderHeader, HolderKind);
+			}
+
+			return await _http.SendAsync(request, ct).ConfigureAwait(false);
+		}
+
+		/// <summary>
+		/// Returns the mutation lease this process holds on the app, claiming it on first use.
+		/// </summary>
+		/// <remarks>
+		/// The lease is per app, not per client: the suite builds one client per test but they all
+		/// drive the same TestApp, and the agent only ever has one holder. A per-client lease would
+		/// make every test after the first take over from the one before it.
+		/// </remarks>
+		private async Task<string> AcquireLeaseAsync(CancellationToken ct)
+		{
+			lock (LeaseSync)
+			{
+				if (UnleasedPorts.Contains(_port))
+					return null;
+				if (LeaseIds.TryGetValue(_port, out var held))
+					return held;
+			}
+
+			await LeaseGate.WaitAsync(ct).ConfigureAwait(false);
+			try
+			{
+				lock (LeaseSync)
+				{
+					if (UnleasedPorts.Contains(_port))
+						return null;
+					if (LeaseIds.TryGetValue(_port, out var held))
+						return held;
+				}
+
+				return await ClaimLeaseAsync(forceTakeover: false, ct).ConfigureAwait(false);
+			}
+			finally
+			{
+				LeaseGate.Release();
+			}
+		}
+
+		/// <summary>
+		/// Sends one lease claim. Must only be called while holding <see cref="LeaseGate"/>.
+		/// </summary>
+		/// <param name="forceTakeover">
+		/// Takes the lease even if another session left one behind. A claim that is merely refused
+		/// leaves the current holder in place, which is what a real second client wants; this suite
+		/// is the only driver of the app, so a stale lease from an earlier client or run is taken.
+		/// </param>
+		/// <param name="ct">Cancellation token.</param>
+		private async Task<string> ClaimLeaseAsync(bool forceTakeover, CancellationToken ct)
+		{
+			var attemptedLeaseId = Guid.NewGuid().ToString("N");
+			var payload = new Dictionary<string, object>
+			{
+				["action"] = "claim",
+				["leaseId"] = attemptedLeaseId,
+				["holderKind"] = HolderKind,
+				["label"] = "AvalonDock DevFlow tests",
+				["force"] = forceTakeover,
+			};
+
+			// Serialized up front: JsonContent posts a chunked body, which the agent's HTTP server
+			// does not read, so the claim would fail on a dropped connection instead of a lease.
+			using var content = new StringContent(
+				JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+			using var resp = await _http.PostAsync(LeaseEndpoint, content, ct).ConfigureAwait(false);
+			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+			if (resp.StatusCode == HttpStatusCode.NotFound)
+			{
+				// An agent that predates mutation leases allows every mutation.
+				lock (LeaseSync) UnleasedPorts.Add(_port);
+				return null;
+			}
+
+			if (!resp.IsSuccessStatusCode)
+				throw new HttpRequestException(
+					$"DevFlow lease claim returned {(int)resp.StatusCode}: {raw}");
+
+			if (!string.IsNullOrWhiteSpace(raw))
+			{
+				using var doc = JsonDocument.Parse(raw);
+				if (doc.RootElement.TryGetProperty("youHold", out var youHold)
+					&& youHold.ValueKind == JsonValueKind.False)
+				{
+					if (!forceTakeover)
+						return await ClaimLeaseAsync(forceTakeover: true, ct).ConfigureAwait(false);
+
+					throw new InvalidOperationException(
+						$"The app refused to hand over the DevFlow mutation lease: {raw}");
+				}
+			}
+
+			lock (LeaseSync) LeaseIds[_port] = attemptedLeaseId;
+			return attemptedLeaseId;
+		}
+
 		public async Task<JsonElement> DragAsync(DragRequest request, CancellationToken ct = default)
 		{
 			var body = JsonSerializer.Serialize(request);
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
-			using var resp = await _http.PostAsync("/api/v1/ui/actions/drag", content, ct).ConfigureAwait(false);
+			using var resp = await SendMutationAsync(HttpMethod.Post, "/api/v1/ui/actions/drag", content, ct).ConfigureAwait(false);
 			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 			if (!resp.IsSuccessStatusCode)
 				throw new HttpRequestException($"DevFlow drag returned {(int)resp.StatusCode}: {raw}");
@@ -134,7 +265,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			var body = JsonSerializer.Serialize(new { x, y });
 			using var content = new StringContent(body, Encoding.UTF8, "application/json");
-			using var resp = await _http.PostAsync(path, content, ct).ConfigureAwait(false);
+			using var resp = await SendMutationAsync(HttpMethod.Post, path, content, ct).ConfigureAwait(false);
 			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 			if (!resp.IsSuccessStatusCode)
 				throw new HttpRequestException($"DevFlow {label} returned {(int)resp.StatusCode}: {raw}");
@@ -513,6 +644,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 			return raw;
 		}
 
+		// The mutation lease is deliberately not released: the next client for this app is the same
+		// process and reuses it, and a released lease would only have to be re-claimed.
 		public void Dispose() => _http.Dispose();
 	}
 
