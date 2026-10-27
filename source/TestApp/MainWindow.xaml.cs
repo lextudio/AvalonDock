@@ -375,6 +375,18 @@ namespace TestApp
 				for (DependencyObject d = gapSource; d != null && chain.Count < 14; d = VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d))
 					chain.Add(d is FrameworkElement fe && !string.IsNullOrEmpty(fe.Name) ? $"{d.GetType().Name}#{fe.Name}" : d.GetType().Name);
 				Console.Error.WriteLine($"[GAP-TRACE] preview-down at {Mouse.GetPosition(dockManager)} source chain: {string.Join(" < ", chain)}");
+				static string Chain(DependencyObject d)
+				{
+					var c = new List<string>();
+					for (; d != null && c.Count < 6; d = VisualTreeHelper.GetParent(d)) c.Add(d.GetType().Name);
+					return string.Join(" < ", c);
+				}
+				var pos = Mouse.GetPosition(dockManager);
+				var input = dockManager.InputHitTest(pos) as DependencyObject;
+				var visual = VisualTreeHelper.HitTest(dockManager, pos)?.VisualHit;
+				var winPos = Mouse.GetPosition(this);
+				var winInput = this.InputHitTest(winPos) as DependencyObject;
+				Console.Error.WriteLine($"[GAP-TRACE] InputHitTest(manager)={Chain(input)} | VisualTreeHelper(manager)={Chain(visual)} | window pos={winPos} InputHitTest(window)={Chain(winInput)} | DirectlyOver={Chain(Mouse.DirectlyOver as DependencyObject)}");
 			}
 			if (kind == "down")
 				_lastDownHandled = e.Handled;
