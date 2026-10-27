@@ -1194,9 +1194,12 @@ namespace TestApp
 				"manager" => dockManager,
 					"anchorable-title" => FindAnchorableTitle(contentId),
 					"autohide-tab" => FindAutoHideTab(contentId),
+					// The tab of that very content wins; a sibling tab in the same pane is only a fallback,
+					// otherwise the first tab in the pane is returned for every content in it.
 					"anchorable-tab" => FindVisualDescendants<LayoutAnchorableTabItem>(dockManager)
-							.Where(x => MatchesAnchorableContent(x, contentId))
-							.FirstOrDefault(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0),
+							.Where(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0)
+							.OrderBy(x => string.Equals((x.Model as LayoutAnchorable)?.ContentId, contentId, StringComparison.Ordinal) ? 0 : 1)
+							.FirstOrDefault(x => MatchesAnchorableContent(x, contentId)),
 					"document-tab" => FindVisualDescendants<LayoutDocumentTabItem>(dockManager)
 						.Where(x => string.Equals(x.Model?.ContentId, contentId, StringComparison.Ordinal))
 						.FirstOrDefault(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0),

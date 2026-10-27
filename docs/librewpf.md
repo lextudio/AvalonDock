@@ -720,8 +720,15 @@ test, so they are skipped on LibreWPF with the reason in the skip message;
 |---|---|---|
 | Auto-hide click | `ClickAutoHideTab_OpensFlyout_Issue169`, `AutoHideWithTextBoxes_ContentAccessible_Issue62`, `AutoHideFlyout_IsResponsive_Issue10`, `SaveLoadLayout_WithAutoHidePanels_Issue111` | The click lands on the right anchor (`hitContentTitle` = `AutoHide1 Content`), down and up both arrive, `lastDownHandled=false`, `Mouse.DirectlyOver` is the anchor's `Border`; `LayoutAnchorControl.OnMouseDown` should then call `ShowAutoHideWindow`, but `avd.query.autohide` never reports the flyout open. Next step: trace `AutoHideWindowManager.ShowAutoHideWindow` and the close timer (`IsWin32MouseOver` on LibreWPF) |
 | Tool tab click | `ClickToolWindowTab_ActivatesIt_Issue375`, `ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` | Even with the pane widened to 300, the centre of Tool Window 1's tab header (as `TransformToAncestor` reports it) hit-tests to `Tool Window 2`, and that is what activates. The anchorable tab panel is arranged differently from WPF |
-| Floating size to content (#174) | `FloatingWindow_HasReasonableSize_Issue174` | `managedWidth/Height` 25x25, native frame 10x10, five seconds after creation; the content declares 300x300 minimums and `AutoWindowSizeWhenOpened` is on |
 | macOS native drag | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` (macOS only) | Failed on the macOS runner in every run since the matrix was added (the overlay never appears, the resizer never moves); Linux runs the same cases green through XTest |
+
+Fixed: **Floating size to content (#174)**. `UpdateWindowsSizeBasedOnMinSize` was driven only by the
+Win32 `WM_ACTIVATE` hook, which the portable `HwndSource` never delivers, so the window stayed at
+25x25 managed / 10x10 native. `LayoutFloatingWindowControl.OnLoaded` now runs it once after the first
+layout on the portable path. Also fixed: the TestApp's `anchorable-tab` bounds returned the first tab
+of the pane for every content in it (`MatchesAnchorableContent` also matched sibling tabs), which is why
+the tool tab click "hit-tested to Tool Window 2"; the click is still not activating the tab (the tab
+activates on mouse-up), which is open.
 
 ### Work list from the earlier runs
 

@@ -36,10 +36,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			"a click that lands on the auto-hide anchor (not handled) does not open the flyout";
 
 		public const string ToolTabClick =
-			"the screen position of an anchorable tab's header is covered by the neighbouring tab, so a pixel click activates the wrong tool window";
-
-		public const string FloatingSizeToContent =
-			"a new floating window is not sized to its content (managed 25x25, native 10x10)";
+			"a pixel click on an anchorable tab's header does not activate its tool window (the tab activates on mouse-up)";
 
 		public const string MacNativeDrag =
 			"the cliclick-driven drag/resizer gesture does not reach AvalonDock on the macOS runner";

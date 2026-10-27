@@ -833,6 +833,12 @@ namespace AvalonDock.Controls
 				AddHandler(MouseLeftButtonDownEvent, new MouseButtonEventHandler(OnPortableCaptionMouseDown), handledEventsToo: true);
 				if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 					LocationChanged += OnPortableNativeLocationChanged;
+				// The Win32 path sizes the window from WM_ACTIVATE (see FilterMessage), a message the
+				// portable HwndSource never delivers, so size it once the first layout has run (#174).
+				Dispatcher.BeginInvoke(new Action(() =>
+				{
+					if (IsLoaded) UpdateWindowsSizeBasedOnMinSize();
+				}), System.Windows.Threading.DispatcherPriority.ContextIdle);
 			}
 			else if (_hwndSrc != null)
 			{
