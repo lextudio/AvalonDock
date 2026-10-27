@@ -106,7 +106,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup .NET
+      # global.json pins 11.0.1xx: LibreWPF.Sdk 0.1.0-preview.69 is resolved by that SDK band, and
+      # without it `dotnet build` stops before restoring ("A compatible .NET SDK was not found",
+      # exit 155). The runtime stays .NET 10 because the app targets net10.0-windows.
+      - name: Setup .NET 11 preview SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      - name: Setup .NET 10 runtime
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -147,6 +156,29 @@ jobs:
         run: |
           dotnet build source/TestApp/TestApp.csproj --configuration Debug
           dotnet build source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj --configuration Debug
+
+      # NuGet source mapping already makes GitHub Packages the only candidate for these prefixes
+      # (the most specific pattern wins over nuget.org's `*`), but a package already present in the
+      # global packages folder is never looked up again. nuget.org publishes the same 0.1.0-preview.69
+      # version with different bits (it still carries osx-x64 and lacks the OpenAvalon native
+      # staging), so a stale cache entry would silently test the wrong LibreWPF. Assert the recorded
+      # source instead of assuming it.
+      - name: Verify the LibreWPF closure came from OpenAvalon
+        run: |
+          expected='https://nuget.pkg.github.com/lextudio/index.json'
+          status=0
+          for meta in $NUGET_PACKAGES/librewpf.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/librewinforms.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata; do
+            [ -f "$meta" ] || continue
+            # Published on nuget.org on purpose (see NuGet.config).
+            case "$meta" in */progpu.scene.native/*) continue ;; esac
+            if ! grep -q "\"source\": \"${expected}\"" "$meta"; then
+              echo "::error::${meta} came from $(grep -o '"source": "[^"]*"' "$meta" | cut -d'"' -f4) instead of OpenAvalon."
+              status=1
+            fi
+          done
+          exit "$status"
 
       - name: Test (DevFlow UI Tests)
         env:
