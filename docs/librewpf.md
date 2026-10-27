@@ -975,8 +975,8 @@ Becomes simpler, with one honest caveat.
        macOS with `EnableWindowsTargeting`; 224 findings fixed: `dotnet format` for style rules, XML docs
        by hand, regions removed, `CA1502`/`CA1506` suppressed with a justification on
        `LayoutAutoHideWindowControl`, `LayoutFloatingWindowControl` and `OverlayWindow.GetTargets`).
-8. [~] Windows DevFlow legs on LibreWPF run, but every case fails to start the app (section 11.9, a LibreWPF
-       `HwndSource` child-window gap, not an AvalonDock one); the
+8. [~] Windows DevFlow legs on LibreWPF: every case failed to start the app because of a LibreWPF
+       `WindowsFormsHost` gap, fixed in LibreWPF (section 11.9), to be verified after the package publish; the
        legs are `continue-on-error` in `ci-librewpf.yml` and not a release gate in
        `release-librewpf.yml` until LibreWPF can host `HwndHost` content on Windows. The Windows skip logic in
        `NativeInputEnvironment` and `KnownLibreWpfGaps.IsLibreWpf` stays as it was.
@@ -1003,20 +1003,18 @@ Becomes simpler, with one honest caveat.
 - 2026-10-27 (later): steps 1-7 and 9 landed (`a25586c`, `f81bab3`). DevFlow packages now come from the
   DevFlow pipeline's GitHub Packages feed (`6e6a97e`, see 11.8). Open: the first CI results of the two
   new workflows, and the reductions in step 8.
-- 2026-10-27 (CI of the split): linux-x64 and linux-arm64 are green on the new LibreWPF line. The Windows
-  legs fail all 118 cases with `DevFlow agent not reachable`: the app dies at startup with
-  `InvalidOperationException: BuildWindowCore failed to return the hosted child window handle` (from
-  `HwndHost.BuildWindow`). Measured, not guessed: a temporary trace in
-  `LayoutAutoHideWindowControl.UsesPortableVisualHosting` never fired on Windows, because LibreWPF's
-  `HwndHost.BuildOrReparentWindow` evaluates `portableParent != null && UsesPortableVisualHosting` and
-  `portableParent` is null there - **on the Windows lane the presentation source is a native `HwndSource`**,
-  so AvalonDock must (and does) follow the real-WPF child-HWND contract. Treating Windows as a "portable
-  backend" (`HostsContentAsVisualChild` true) was tried and made it worse (`The root Visual of a
-  VisualTarget cannot have a parent`, the presenter is a visual child *and* gets grafted as a child
-  HwndSource root); it is reverted. The remaining failure is inside LibreWPF's native `HwndSource` child
-  creation on Windows, which returns no handle where real WPF does. That needs a Windows machine to debug
-  in LibreWPF (`HwndSource` with `ParentWindow` on the Windows lane); until then the Windows legs are
-  experimental (`continue-on-error` in CI, build-only in the release validation).
+- 2026-10-27 (Windows LibreWPF, **root cause found and fixed in LibreWPF**): all 118 cases failed at startup
+  with `BuildWindowCore failed to return the hosted child window handle`. Traces on the Windows runner
+  showed AvalonDock's own `HwndHost` (the auto-hide flyout) building fine - valid child handle, right parent,
+  62 successful builds - and a `HwndHost` listing at the failure showed the culprit:
+  `System.Windows.Forms.Integration.WindowsFormsHost` with handle `0x0` (TestApp has a WinForms window).
+  `WindowsFormsHost.BuildWindowCore` only called `HostContainerInternal.CreateControl()` off Windows, on the
+  assumption that real WinForms creates the adapter handle while parenting; on the Windows lane running
+  LibreWinForms the handle stays zero, `SetParent` got zero and `HwndHost` threw. Fixed in LibreWPF
+  (`083e157ee`: create the control when the handle is still zero on Windows). The earlier theories (the
+  presentation source being a native `HwndSource`, the portable-host switch) were measurements of
+  AvalonDock's side that turned out not to be the failing host; the "treat Windows as portable" attempt stays
+  reverted. Verification: the next Windows legs after the LibreWPF package publish.
 - 2026-10-27 (end of day): CI of `9000c9f`: the WPF line (`ci.yml`) is green; the LibreWPF line is green on
   linux-x64 and linux-arm64, the Windows legs fail as described above (now `continue-on-error`), the macOS leg
   was cancelled by a later push and has no result yet. DevFlow is pinned to `0.3.1` again, served from

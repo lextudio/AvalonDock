@@ -1744,13 +1744,6 @@ namespace AvalonDock.Controls
 				// stay alive until the process ends (issue #587).
 				ReleaseHostedContent();
 
-#if LIBREWPF
-				{
-					var parentSrc = HwndSource.FromHwnd(hwndParent.Handle);
-					var visualSrc = PresentationSource.FromVisual(this);
-					System.Console.Error.WriteLine($"[HWND-TRACE] floating BuildWindowCore parent=0x{hwndParent.Handle.ToInt64():X} IsWindowVisible={Win32Helper.IsWindowVisible(hwndParent.Handle)} FromHwnd={parentSrc?.GetType().Name} FromHwndIsPortable={parentSrc?.GetType().GetProperty("IsPortable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)?.GetValue(parentSrc)} visualSource={visualSrc?.GetType().FullName} os={System.Environment.OSVersion.Platform}");
-				}
-#endif
 				_wpfContentHost = new HwndSource(new HwndSourceParameters
 				{
 					ParentWindow = hwndParent.Handle,
@@ -1760,9 +1753,6 @@ namespace AvalonDock.Controls
 					UsesPerPixelOpacity = true,
 				});
 
-#if LIBREWPF
-				System.Console.Error.WriteLine($"[HWND-TRACE] floating child HwndSource handle=0x{_wpfContentHost.Handle.ToInt64():X} lastError={System.Runtime.InteropServices.Marshal.GetLastWin32Error()} isChild={(_wpfContentHost.Handle != System.IntPtr.Zero ? Win32Helper.GetParent(_wpfContentHost.Handle).ToInt64().ToString("X") : "n/a")}");
-#endif
 				CreateRootPresenter();
 				_wpfContentHost.RootVisual = _rootPresenter;
 				_manager = _owner.Model.Root.Manager;
