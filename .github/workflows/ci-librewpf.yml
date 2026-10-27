@@ -72,9 +72,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # LibreWPF on Windows cannot host AvalonDock's HwndHost content yet (LibreWPF only takes its visual
-    # hosting path for portable presentation sources; on Windows the parent is a real HwndSource), so
-    # those legs are reported but do not fail the run. docs/librewpf.md, section 11.9.
+    # LibreWPF on Windows cannot create the child HwndSource AvalonDock's HwndHost content needs yet (the
+    # presentation source there is a native HwndSource; BuildWindowCore gets no handle back), so those
+    # legs are reported but do not fail the run. docs/librewpf.md, section 11.9.
     continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 90
 

@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
           # LibreWPF on Windows: the same closure is built, but the DevFlow suite does not gate the
-          # release yet (LibreWPF cannot host HwndHost content on Windows; docs/librewpf.md, 11.9).
+          # release yet (LibreWPF cannot create child HwndSource windows on Windows yet; docs/librewpf.md, 11.9).
           # The NUnit and FlaUI suites run on real WPF in the WPF line's own workflow (ci.yml).
           - name: windows-x64
             runner: windows-2025
