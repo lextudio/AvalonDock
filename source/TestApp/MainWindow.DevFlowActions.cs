@@ -229,6 +229,9 @@ namespace TestApp
 		[DevFlowAction("avd.focus.query", Description = "Report the focused element, its type and the document/anchorable it belongs to")]
 		public static string QueryFocusAction() => OnUi(w => w.QueryFocus());
 
+		[DevFlowAction("avd.pane.set-width", Description = "Set the dock width of the anchorable pane group hosting a content, so narrow panes (Tool Window 1 is declared 50 wide) have tabs that can be clicked")]
+		public static string SetPaneGroupWidthAction(string contentId, double width) => OnUi(w => w.SetPaneGroupWidth(contentId, width));
+
 		[DevFlowAction("avd.focus.set", Description = "Focus the first TextBox of a document or anchorable, as clicking into its content does")]
 		public static string SetFocusAction(string contentIdOrTitle) => OnUi(w => w.SetFocus(contentIdOrTitle));
 

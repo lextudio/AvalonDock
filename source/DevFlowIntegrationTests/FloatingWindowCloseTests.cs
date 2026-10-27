@@ -54,7 +54,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 			}
 
 			await WaitUntilAsync(
-				async () => ReadArray(await QueryLayoutAsync(client), "floatingWindows").Count() == 0,
+				// The model keeps the emptied floating window around (it is what the tool window is
+				// re-shown into), so "survived" means the window still holds the tool window.
+				async () => !IsFloating(await QueryLayoutAsync(client), "Tool Window 1"),
 				TimeSpan.FromSeconds(5),
 				"The floating window survived its own close.",
 				async () => $"dialogs={await client.InvokeAsync("avd.dialogs.query")} layout={await client.InvokeAsync("avd.query.layout")}");

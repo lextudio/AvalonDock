@@ -114,8 +114,18 @@ namespace AvalonDock.DevFlowIntegrationTests
 		/// </summary>
 		protected static async Task ClickTabAsync(DevFlowClient client, string kind, string contentId)
 		{
-			var bounds = await client.QueryBoundsAsync(kind, contentId);
+			// Tool Window 1's pane is declared 50 wide, which leaves its tab a 9 px sliver overlapped by
+			// the neighbouring tab: a pixel click then lands on "Tool Window 2". Give the pane room, so
+			// the click is on the tab it is aimed at.
+			if (kind == "anchorable-tab")
+			{
+				using var widened = JsonDocument.Parse(await client.InvokeAsync("avd.pane.set-width", contentId, 300));
+				Assert.True(
+					ReadBool(widened.RootElement, "changed"),
+					$"'{contentId}' has no anchorable pane group to widen, so its tab would stay a sliver overlapped by its neighbour.");
+			}
 
+			var bounds = await client.QueryBoundsAsync(kind, contentId);
 			await client.ClickAsync(bounds.CenterX, bounds.CenterY);
 		}
 

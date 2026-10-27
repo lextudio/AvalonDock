@@ -121,6 +121,7 @@ namespace TestApp
 		private Point _lastDockManagerMousePosition;
 		private MouseButtonState _lastDockManagerLeftButton;
 		private string _lastInputOriginalSource;
+		private bool _lastDownHandled;
 
 		public MainWindow()
 		{
@@ -364,6 +365,8 @@ namespace TestApp
 			_lastDockManagerMousePosition = Mouse.GetPosition(dockManager);
 			_lastDockManagerLeftButton = Mouse.LeftButton;
 			_lastInputOriginalSource = e.OriginalSource?.GetType().FullName;
+			if (kind == "down")
+				_lastDownHandled = e.Handled;
 		}
 
 		/// <summary>
@@ -1538,6 +1541,7 @@ namespace TestApp
 				_lastDockManagerMousePosition = default;
 				_lastDockManagerLeftButton = Mouse.LeftButton;
 			_lastInputOriginalSource = null;
+			_lastDownHandled = false;
 			return "reset";
 		}
 
@@ -1552,6 +1556,9 @@ namespace TestApp
 				["captured"] = Mouse.Captured?.GetType().FullName,
 				["directlyOver"] = Mouse.DirectlyOver?.GetType().FullName,
 				["originalSource"] = _lastInputOriginalSource,
+				// True when something below the manager handled the last MouseDown, which stops
+				// LayoutAnchorControl.OnMouseDown from opening the auto-hide flyout.
+				["lastDownHandled"] = _lastDownHandled,
 			};
 
 			return System.Text.Json.JsonSerializer.Serialize(result);
@@ -1757,6 +1764,24 @@ namespace TestApp
 				["item"] = DescribeMenuItem(item),
 				["managerHosted"] = layoutRoot.Children.Contains(dockManager),
 			});
+		}
+
+		public string SetPaneGroupWidth(string contentId, double width)
+		{
+			var content = dockManager.Layout.Descendents().OfType<LayoutContent>()
+				.FirstOrDefault(c => string.Equals(c.ContentId, contentId, StringComparison.Ordinal))
+				?? throw new InvalidOperationException($"No content '{contentId}'.");
+
+			ILayoutContainer parent = content.Parent;
+			while (parent != null && parent is not LayoutAnchorablePaneGroup)
+				parent = (parent as ILayoutElement)?.Parent;
+			if (parent is not LayoutAnchorablePaneGroup group)
+				return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["changed"] = false });
+
+			group.DockWidth = new GridLength(width);
+			dockManager.UpdateLayout();
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["changed"] = true, ["dockWidth"] = group.DockWidth.Value });
 		}
 
 		public string CloseMenus()
