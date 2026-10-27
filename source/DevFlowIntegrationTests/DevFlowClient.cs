@@ -120,15 +120,54 @@ namespace AvalonDock.DevFlowIntegrationTests
 		/// </summary>
 		private async Task<HttpResponseMessage> SendMutationAsync(HttpMethod method, string path, HttpContent content, CancellationToken ct)
 		{
-			var leaseId = await AcquireLeaseAsync(ct).ConfigureAwait(false);
-			using var request = new HttpRequestMessage(method, path) { Content = content };
-			if (leaseId != null)
-			{
-				request.Headers.TryAddWithoutValidation(LeaseHeader, leaseId);
-				request.Headers.TryAddWithoutValidation(HolderHeader, HolderKind);
-			}
+			// Buffered so the request can be replayed if the lease turns out to be stale. A restarted
+			// app (the suite restarts TestApp between native-drag rows) and a lease that expired are
+			// both only discovered when a mutation is rejected, so the retry has to resend the body.
+			var body = await content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+			var contentType = content.Headers.ContentType;
+			content.Dispose();
 
-			return await _http.SendAsync(request, ct).ConfigureAwait(false);
+			for (var attempt = 0; ; attempt++)
+			{
+				var leaseId = await AcquireLeaseAsync(ct).ConfigureAwait(false);
+				using var request = new HttpRequestMessage(method, path) { Content = new ByteArrayContent(body) };
+				if (contentType != null) request.Content.Headers.ContentType = contentType;
+				if (leaseId != null)
+				{
+					request.Headers.TryAddWithoutValidation(LeaseHeader, leaseId);
+					request.Headers.TryAddWithoutValidation(HolderHeader, HolderKind);
+				}
+
+				var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+				// One retry is enough: the second attempt claims a fresh lease with force, which
+				// succeeds unless the app is genuinely driven by someone else.
+				if (attempt == 0 && response.StatusCode == HttpStatusCode.Conflict)
+				{
+					var rejected = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+					response.Dispose();
+					if (!rejected.Contains("\"reason\":\"lease\"", StringComparison.Ordinal))
+						throw new HttpRequestException(
+							$"DevFlow {method} {path} returned {(int)HttpStatusCode.Conflict}: {rejected}");
+
+					ForgetLease(_port);
+					continue;
+				}
+
+				return response;
+			}
+		}
+
+		/// <summary>
+		/// Drops the cached lease for an agent, so the next mutation claims one again.
+		/// </summary>
+		/// <remarks>
+		/// Called when the app under test is restarted: a new process has no lease at all, and the id
+		/// this process holds refers to the previous instance.
+		/// </remarks>
+		internal static void ForgetLease(int port)
+		{
+			lock (LeaseSync) LeaseIds.Remove(port);
 		}
 
 		/// <summary>

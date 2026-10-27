@@ -193,6 +193,9 @@ public class DevFlowAppFixture : IAsyncLifetime
 			_process = null;
 		}
 
+		// A new process has no mutation lease, and the id held for the old one would be rejected.
+		DevFlowClient.ForgetLease(Port);
+
 		await InitializeAsync();
 	}
 

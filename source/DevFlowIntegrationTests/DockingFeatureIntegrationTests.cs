@@ -100,8 +100,12 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 			var raw = await client.GetTreeAsync(TestContext.Current.CancellationToken);
 			var root = JsonDocument.Parse(raw).RootElement.Clone();
-			// The endpoint wraps the root array as {"elements": [...]}, not a bare array.
-			return root.TryGetProperty("elements", out var elements) ? elements : root;
+			// The endpoint has returned both shapes: a bare root array and {"elements": [...]}.
+			// JsonElement.TryGetProperty throws on a non-object, so check the kind first.
+			if (root.ValueKind == JsonValueKind.Object
+				&& root.TryGetProperty("elements", out var elements))
+				return elements;
+			return root;
 		}
 
 		private static bool FindNodeByName(JsonElement element, string name)
