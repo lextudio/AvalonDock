@@ -25,6 +25,25 @@ namespace TestApp
         {
             base.OnStartup(e);
 #if DEVFLOW
+            System.AppDomain.CurrentDomain.FirstChanceException += (_, fc) =>
+            {
+                if (fc.Exception is System.InvalidOperationException ioe && ioe.Message.StartsWith("BuildWindowCore failed", System.StringComparison.Ordinal))
+                {
+                    var found = new System.Collections.Generic.List<string>();
+                    void Walk(System.Windows.DependencyObject d, int depth)
+                    {
+                        if (d == null || depth > 60) return;
+                        if (d is System.Windows.Interop.HwndHost h)
+                            found.Add($"{h.GetType().FullName} handle=0x{h.Handle.ToInt64():X} loaded={(h as System.Windows.FrameworkElement)?.IsLoaded}");
+                        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(d); i++)
+                            Walk(System.Windows.Media.VisualTreeHelper.GetChild(d, i), depth + 1);
+                    }
+                    foreach (System.Windows.Window w in Windows) Walk(w, 0);
+                    System.Console.Error.WriteLine("[HWND-TRACE] BuildWindowCore failure; hosts in the tree: " + (found.Count == 0 ? "(none visible yet)" : string.Join(" | ", found)));
+                }
+            };
+#endif
+#if DEVFLOW
             _devFlowService = this.AddWpfDevFlowAgent(new AgentOptions
             {
                 Port = GetAgentPort()
