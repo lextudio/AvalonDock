@@ -164,6 +164,9 @@ namespace TestApp
 			Description = "Invoke a menu item by header path, e.g. 'Layout/Save/Layout_1' or 'Tools/New floating window'")]
 		public static string InvokeMenuItemAction(string path) => OnUi(w => w.InvokeMenuItem(path));
 
+		[DevFlowAction("avd.context.invoke", Description = "Invoke an entry of a tab's context menu by header, e.g. 'Window' on an anchorable tab")]
+		public static string InvokeTabContextMenuItemAction(string title, string header, string kind = "anchorable") => OnUi(w => w.InvokeTabContextMenuItem(title, header, kind));
+
 		[DevFlowAction("avd.menu.close", Description = "Close every open menu and context menu so the next gesture is not swallowed")]
 		public static string CloseMenusAction() => OnUi(w => w.CloseMenus());
 

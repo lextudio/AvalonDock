@@ -1780,6 +1780,79 @@ namespace TestApp
 		}
 
 		/// <summary>
+		/// Invokes an entry of a tab's drop-down context menu. The menu belongs to the tab's
+		/// <see cref="DropDownControlArea"/>, which is what gives its commands their LayoutItem data
+		/// context, so the menu is opened through the same right-click the class handler handles rather
+		/// than constructed here.
+		/// </summary>
+		public string InvokeTabContextMenuItem(string title, string header, string kind = "anchorable")
+		{
+			var area = FindTabDropDownArea(title, kind);
+			var menu = area.DropDownContextMenu
+				?? throw new InvalidOperationException($"The '{title}' tab has no context menu.");
+
+			if (!menu.IsOpen)
+			{
+				area.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right)
+				{
+					RoutedEvent = UIElement.PreviewMouseRightButtonUpEvent,
+					Source = area,
+				});
+			}
+
+			var item = menu.Items.OfType<MenuItem>()
+				.FirstOrDefault(i => string.Equals(i.Header?.ToString(), header, StringComparison.OrdinalIgnoreCase))
+				?? throw new InvalidOperationException(
+					$"No '{header}' entry in the '{title}' context menu. Available: " +
+					string.Join(", ", menu.Items.OfType<MenuItem>().Select(i => i.Header?.ToString())));
+
+			string via;
+			if (item.Command != null)
+			{
+				if (!item.Command.CanExecute(item.CommandParameter))
+					throw new InvalidOperationException($"The '{header}' entry is disabled in the '{title}' context menu.");
+				item.Command.Execute(item.CommandParameter);
+				via = "command:" + item.Command.GetType().Name;
+			}
+			else
+			{
+				item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, item));
+				via = "click";
+			}
+
+			menu.IsOpen = false;
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["title"] = title,
+				["header"] = header,
+				["via"] = via,
+				["items"] = menu.Items.OfType<MenuItem>().Select(i => i.Header?.ToString()).ToArray(),
+				["layout"] = QueryLayout(),
+			});
+		}
+
+		/// <summary>The drop-down area of a visible tab, which owns that tab's context menu.</summary>
+		private DropDownControlArea FindTabDropDownArea(string title, string kind)
+		{
+			var roots = GetAvalonDockVisualRoots().ToArray();
+			FrameworkElement tab = string.Equals(kind, "document", StringComparison.OrdinalIgnoreCase)
+				? roots.SelectMany(FindVisualDescendants<LayoutDocumentTabItem>)
+					.FirstOrDefault(t => string.Equals(t.Model?.Title, title, StringComparison.Ordinal)
+						|| string.Equals(t.Model?.ContentId, title, StringComparison.Ordinal))
+				: roots.SelectMany(FindVisualDescendants<LayoutAnchorableTabItem>)
+					.FirstOrDefault(t => string.Equals(t.Model?.Title, title, StringComparison.Ordinal)
+						|| string.Equals(t.Model?.ContentId, title, StringComparison.Ordinal));
+
+			if (tab == null)
+				throw new InvalidOperationException($"No {kind} tab titled '{title}' is visible.");
+
+			return FindVisualDescendants<DropDownControlArea>(tab).FirstOrDefault()
+				?? throw new InvalidOperationException($"The '{title}' tab has no drop-down area to open a menu from.");
+		}
+
+		/// <summary>
 		/// Right-clicks a tab without a pointer: the tab's <see cref="DropDownControlArea"/> handles
 		/// PreviewMouseRightButtonUp (a class handler) and opens the manager's context menu, so raising
 		/// that event on the area runs the same code a real right click does. TestApp defines no context
