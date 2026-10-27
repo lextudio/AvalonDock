@@ -386,6 +386,23 @@ namespace TestApp
 				var visual = VisualTreeHelper.HitTest(dockManager, pos)?.VisualHit;
 				var winPos = Mouse.GetPosition(this);
 				var winInput = this.InputHitTest(winPos) as DependencyObject;
+				foreach (var anchorCtl in FindVisualDescendants<LayoutAnchorControl>(dockManager))
+				{
+					if (anchorCtl.Model?.Title != "AutoHide1 Content") continue;
+					var center = new Point(anchorCtl.ActualWidth / 2, anchorCtl.ActualHeight / 2);
+					for (DependencyObject anc = anchorCtl; anc != null; anc = VisualTreeHelper.GetParent(anc))
+					{
+						if (anc is not Visual av) continue;
+						Point pa;
+						try { pa = anchorCtl.TransformToAncestor(av).Transform(center); } catch { break; }
+						var h = VisualTreeHelper.HitTest(av, pa)?.VisualHit as DependencyObject;
+						bool inside = false;
+						for (var x = h; x != null; x = VisualTreeHelper.GetParent(x)) if (ReferenceEquals(x, anchorCtl)) { inside = true; break; }
+						var ue = anc as UIElement; var fe = anc as FrameworkElement;
+						Console.Error.WriteLine($"[GAP-ANC] {anc.GetType().Name}{(fe != null && fe.Name != "" ? "#" + fe.Name : "")} p={pa} reachesAnchor={inside} hit={h?.GetType().Name} hitTestVisible={ue?.IsHitTestVisible} clip={ue?.Clip?.Bounds} vtransform={VisualTreeHelper.GetTransform(av)?.Value} voffset={VisualTreeHelper.GetOffset(av)} size={(fe != null ? fe.ActualWidth + "x" + fe.ActualHeight : "")}");
+						if (anc == dockManager) break;
+					}
+				}
 				Console.Error.WriteLine($"[GAP-TRACE] InputHitTest(manager)={Chain(input)} | VisualTreeHelper(manager)={Chain(visual)} | window pos={winPos} InputHitTest(window)={Chain(winInput)} | DirectlyOver={Chain(Mouse.DirectlyOver as DependencyObject)}");
 			}
 			if (kind == "down")
