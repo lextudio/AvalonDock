@@ -42,7 +42,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			await WaitUntilAsync(
 				async () =>
 				{
-					using var content = JsonDocument.Parse(await client.InvokeAsync("avd.document.content", "document1"));
+					using var content = JsonDocument.Parse(await client.InvokeAsync("avd.content", "document1"));
 					return content.RootElement.GetProperty("textBoxes").EnumerateArray()
 						.Any(t => (t.GetString() ?? string.Empty).Contains("Hello DevFlow", StringComparison.Ordinal));
 				},

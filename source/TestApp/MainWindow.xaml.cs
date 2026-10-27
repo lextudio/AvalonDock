@@ -1183,6 +1183,7 @@ namespace TestApp
 				"menu" => mainMenu,
 				"manager" => dockManager,
 					"anchorable-title" => FindAnchorableTitle(contentId),
+					"autohide-tab" => FindAutoHideTab(contentId),
 					"anchorable-tab" => FindVisualDescendants<LayoutAnchorableTabItem>(dockManager)
 							.Where(x => MatchesAnchorableContent(x, contentId))
 							.FirstOrDefault(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0),
@@ -1901,35 +1902,88 @@ namespace TestApp
 		}
 
 		/// <summary>
-		/// Reports what a document actually hosts, scoped to that document: the text of its TextBoxes and
-		/// the labels of its Buttons. The FlaUI port asserted "some button exists in the window", which
-		/// passed even when the document content was empty; this says which controls the document has.
+		/// Reports what a document or anchorable actually hosts, scoped to it: the text of its TextBoxes,
+		/// its TextBlocks and the labels of its Buttons. The FlaUI cases asserted "some button exists in
+		/// the window", which passed even when the content was empty; this says which controls the
+		/// content has.
 		/// </summary>
-		public string DocumentContent(string contentIdOrTitle)
+		public string ContentReport(string contentIdOrTitle)
 		{
-			var document = FindDocument(contentIdOrTitle);
-			if (document == null)
-				throw new InvalidOperationException($"No document matches '{contentIdOrTitle}'.");
+			var content = dockManager.Layout.Descendents().OfType<LayoutContent>()
+				.FirstOrDefault(c =>
+					string.Equals(c.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+					|| string.Equals(c.Title, contentIdOrTitle, StringComparison.Ordinal));
+			if (content == null)
+				throw new InvalidOperationException($"No document or anchorable matches '{contentIdOrTitle}'.");
 
-			var view = dockManager.GetLayoutItemFromModel(document)?.View;
+			var view = content == null ? null : FindContentElement(contentIdOrTitle);
 			var textBoxes = view == null
 				? new List<TextBox>()
 				: FindVisualDescendants<TextBox>(view).ToList();
+			var textBlocks = view == null
+				? new List<TextBlock>()
+				: FindVisualDescendants<TextBlock>(view).Where(t => !string.IsNullOrWhiteSpace(t.Text)).ToList();
 			var buttons = view == null
 				? new List<Button>()
 				: FindVisualDescendants<Button>(view).ToList();
 
 			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
 			{
-				["contentId"] = document.ContentId,
-				["title"] = document.Title,
-				["isActive"] = document.IsActive,
-				["isVisible"] = document.IsVisible,
+				["contentId"] = content.ContentId,
+				["title"] = content.Title,
+				["kind"] = content is LayoutDocument ? "document" : "anchorable",
+				["isActive"] = content.IsActive,
+				["isVisible"] = content switch
+				{
+					LayoutDocument document => document.IsVisible,
+					LayoutAnchorable anchorable => anchorable.IsVisible,
+					_ => false,
+				},
+				["isAutoHidden"] = content is LayoutAnchorable autoHidden && autoHidden.IsAutoHidden,
 				["viewLoaded"] = view != null,
 				["textBoxes"] = textBoxes.Select(t => t.Text).ToArray(),
+				["textBlocks"] = textBlocks.Select(t => t.Text).ToArray(),
 				["buttons"] = buttons.Select(b => b.Content?.ToString()).ToArray(),
 			});
 		}
+
+		/// <summary>
+		/// The auto-hide flyout: which contents it hosts and whether the given one is the open one. The
+		/// flyout is a separate native host window, so "open" has to be read from the manager rather
+		/// than from the docked content's IsVisible.
+		/// </summary>
+		public string QueryAutoHide(string contentIdOrTitle = null)
+		{
+			var flyout = dockManager.AutoHideWindow;
+			var hosted = flyout?.Model == null
+				? Array.Empty<string>()
+				: flyout.Model.Descendents().OfType<LayoutContent>().Select(c => c.ContentId).ToArray();
+
+			var requested = dockManager.Layout.Descendents().OfType<LayoutAnchorable>()
+				.FirstOrDefault(a =>
+					string.Equals(a.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+					|| string.Equals(a.Title, contentIdOrTitle, StringComparison.Ordinal));
+
+			var anchorBounds = requested == null ? null : FindAutoHideTab(requested.ContentId);
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["open"] = hosted.Length > 0,
+				["contentIds"] = hosted,
+				["requested"] = contentIdOrTitle,
+				["requestedIsOpen"] = requested != null
+					&& hosted.Contains(requested.ContentId, StringComparer.Ordinal),
+				["requestedIsVisible"] = requested?.IsVisible ?? false,
+				["requestedIsAutoHidden"] = requested?.IsAutoHidden ?? false,
+				["tabPresent"] = anchorBounds != null,
+			});
+		}
+
+		/// <summary>The auto-hide sidebar button (the "tab" that opens the flyout) for a content id.</summary>
+		private FrameworkElement FindAutoHideTab(string contentId)
+			=> FindVisualDescendants<LayoutAnchorControl>(dockManager)
+				.Where(x => string.Equals((x.Model as LayoutAnchorable)?.ContentId, contentId, StringComparison.Ordinal))
+				.FirstOrDefault(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0);
 
 		/// <summary>The focused element, and whether it sits inside the docking manager's content.</summary>
 		public string QueryFocus() => System.Text.Json.JsonSerializer.Serialize(DescribeFocus());

@@ -77,7 +77,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			await RestartAppAsync();
 			using var client = await TryConnectAsync();
 
-			using var content = JsonDocument.Parse(await client.InvokeAsync("avd.document.content", "document1"));
+			using var content = JsonDocument.Parse(await client.InvokeAsync("avd.content", "document1"));
 			Assert.Contains(
 				"Click to add 2 documents",
 				content.RootElement.GetProperty("buttons").EnumerateArray().Select(b => b.GetString()));
@@ -115,7 +115,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 
 			// Scoped to the document, which is what the FlaUI case's "first button in the window" was
 			// standing in for: the content has to arrive, with the controls it declares.
-			using var content = JsonDocument.Parse(await client.InvokeAsync("avd.document.content", "document1"));
+			using var content = JsonDocument.Parse(await client.InvokeAsync("avd.content", "document1"));
 			Assert.True(content.RootElement.GetProperty("isActive").GetBoolean());
 			Assert.True(content.RootElement.GetProperty("isVisible").GetBoolean());
 			Assert.True(content.RootElement.GetProperty("viewLoaded").GetBoolean());

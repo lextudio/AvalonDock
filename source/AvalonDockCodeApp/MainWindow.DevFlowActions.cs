@@ -11,26 +11,26 @@ namespace ToggleTestApp
 	public partial class MainWindow
 	{
 		/// <summary>
-		/// The window the actions below act on. DevFlow starts the agent from
-		/// <c>App.OnStartup</c>, before the window exists, so it is looked up per call.
-		/// </summary>
-		private static MainWindow Instance =>
-			(Application.Current?.MainWindow as MainWindow)
-			?? Application.Current?.Windows.OfType<MainWindow>().FirstOrDefault()
-			?? throw new InvalidOperationException("The sample's main window is not available yet.");
-
-		/// <summary>
-		/// Runs an action body on the thread that owns the window. The LibreWPF agent dispatches
-		/// actions that touch UI to the application's thread; the WPF agent invokes them on the HTTP
-		/// request thread, where reading or changing any WPF object throws.
+		/// Runs an action body on the thread that owns the window. DevFlow starts the agent from
+		/// <c>App.OnStartup</c>, before the window exists, and the WPF agent invokes an action on the
+		/// HTTP request thread - where even reading <c>Application.MainWindow</c> throws - while the
+		/// LibreWPF agent already dispatches to the application's thread. Looking the window up and
+		/// calling the body both therefore happen inside the application's dispatcher.
 		/// </summary>
 		private static T OnUi<T>(Func<MainWindow, T> action)
 		{
-			var window = Instance;
-			return window.Dispatcher.CheckAccess()
-				? action(window)
-				: window.Dispatcher.Invoke(() => action(window));
+			var application = Application.Current
+				?? throw new InvalidOperationException("The sample application is not running.");
+
+			return application.Dispatcher.CheckAccess()
+				? action(ResolveWindow(application))
+				: application.Dispatcher.Invoke(() => action(ResolveWindow(application)));
 		}
+
+		private static MainWindow ResolveWindow(Application application) =>
+			(application.MainWindow as MainWindow)
+			?? application.Windows.OfType<MainWindow>().FirstOrDefault()
+			?? throw new InvalidOperationException("The sample's main window is not available yet.");
 
 		[DevFlowAction("avd.query.toggle-bars", Description = "Query every sidebar toggle button: zone, title, content id, checked state and bounds")]
 		public static string QueryToggleBarsAction() => OnUi(w => w.QueryToggleBars());
