@@ -2933,7 +2933,17 @@ namespace TestApp
 			if (ProGpuWpfDiagnostics.TryGetWindowHost(window, out var host) && host?.SilkWindow is { } silk)
 				return new Point(silk.Position.X, silk.Position.Y);
 #endif
-			return PointToScreenPortable(window, new Point(0, 0));
+			// Not PointToScreenPortable: for a floating window that resolves the origin right back
+			// through this method, which overflowed the stack on real WPF (0xC00000FD) as soon as a
+			// floating window's drag handle was queried.
+			try
+			{
+				return window.PointToScreen(new Point(0, 0));
+			}
+			catch (InvalidOperationException)
+			{
+				return new Point(window.Left, window.Top);
+			}
 		}
 
 			private static bool TryFindHitTestableScreenPoint(FrameworkElement element, out Point screenPoint)

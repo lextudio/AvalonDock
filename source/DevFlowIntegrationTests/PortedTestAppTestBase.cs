@@ -45,7 +45,19 @@ namespace AvalonDock.DevFlowIntegrationTests
 				await Fixture.RestartAsync();
 
 			await base.InitializeAsync();
+
+			// Lets any timed-out wait say what the application looked like, without every test having to
+			// pass a description of its own.
+			s_stateProbe = async () =>
+			{
+				using var probe = CreateClient();
+				var layout = await probe.InvokeAsync("avd.query.layout");
+				var autoHide = await probe.InvokeAsync("avd.query.autohide");
+				return $"layout={layout} autohide={autoHide}";
+			};
 		}
+
+		private static Func<Task<string>> s_stateProbe;
 
 		protected async Task<JsonElement> QueryLayoutAsync(DevFlowClient client)
 		{
@@ -145,8 +157,15 @@ namespace AvalonDock.DevFlowIntegrationTests
 				await Task.Delay(100, TestContext.Current.CancellationToken);
 			}
 
+			var state = string.Empty;
+			if (s_stateProbe != null)
+			{
+				try { state = $" State: {await s_stateProbe()}"; }
+				catch (Exception ex) { state = $" (state unavailable: {ex.Message})"; }
+			}
+
 			throw new Xunit.Sdk.XunitException(
-				last == null ? message : $"{message} (last error: {last.Message})");
+				(last == null ? message : $"{message} (last error: {last.Message})") + state);
 		}
 	}
 }
