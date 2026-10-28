@@ -279,36 +279,86 @@ jobs:
 
       # A click tool that is not DPI aware lands off target on a display scaled above 100%; record the scale
       # of the machine the Windows legs run on (the legs differ: x64 and arm64 runners).
-      - name: Report the display scale (Windows)
+      # The native-input cases click the real desktop, so it has to look like one. Two runner-image
+      # defaults broke them while every API call still reported success:
+      # - windows-11-arm logs in to the Windows first-logon privacy page ("Choose privacy settings
+      #   for your device"), a full-screen window above everything, so each real click landed on it
+      #   and WPF saw no mouse input at all.
+      # - "Show window contents while dragging" is off. The Win32 modal move loop then still sends
+      #   WM_MOVING (drop targets track the pointer) but moves the window only on release, so a
+      #   floating window never follows a caption drag. A normal desktop has it on.
+      # The agent's console window is minimised too; a screenshot of the result is uploaded.
+      - name: Prepare the Windows desktop
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Add-Type -Namespace Native -Name Dpi -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetDpiForSystem(); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);'
-          "system DPI = $([Native.Dpi]::GetDpiForSystem()) (96 = 100%), primary screen as this process sees it = $([Native.Dpi]::GetSystemMetrics(0)) x $([Native.Dpi]::GetSystemMetrics(1)), arch = $env:PROCESSOR_ARCHITECTURE"
-          Get-CimInstance Win32_VideoController | Select-Object Name, CurrentHorizontalResolution, CurrentVerticalResolution | Format-Table | Out-String
-          # Can this session move the pointer at all? Native-input cases fail on windows-arm64 with WPF
-          # seeing no mouse input whatsoever, so check the desktop session before blaming the tool.
-          Add-Type -Namespace Native -Name Input -MemberDefinition @'
-          [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool SetCursorPos(int x, int y);
-          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool GetCursorPos(out POINT p);
-          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
-          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+          Add-Type -Namespace Native -Name Desk -MemberDefinition @'
+          public delegate bool EnumProc(System.IntPtr hwnd, System.IntPtr lParam);
+          [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc proc, System.IntPtr lParam);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr hwnd);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hwnd, out RECT r);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr hwnd, out uint pid);
+          [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] public static extern int GetClassName(System.IntPtr hwnd, System.Text.StringBuilder s, int n);
+          [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] public static extern int GetWindowText(System.IntPtr hwnd, System.Text.StringBuilder s, int n);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hwnd, int cmd);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetDpiForSystem();
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
+          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool SystemParametersInfo(uint action, uint param, ref int value, uint winIni);
+          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool SystemParametersInfo(uint action, uint param, System.IntPtr value, uint winIni);
           '@
-          "session id = $((Get-Process -Id $PID).SessionId), user interactive = $([Environment]::UserInteractive), input desktop = $([Native.Input]::OpenInputDesktop(0, $false, 0x100)), foreground = $([Native.Input]::GetForegroundWindow())"
-          $ok = [Native.Input]::SetCursorPos(300, 200); $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-          $p = New-Object Native.Input+POINT; [void][Native.Input]::GetCursorPos([ref]$p)
-          "SetCursorPos(300,200) ok=$ok error=$err -> GetCursorPos=$($p.X),$($p.Y)"
-          query user 2>&1 | Out-String
-          # A window the image leaves on screen (first-logon or setup UI) would take every real click
-          # while SendInput still reports success, so list what is visible and keep a screenshot.
-          Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object Id, ProcessName, MainWindowTitle | Format-Table -AutoSize | Out-String -Width 200
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/TestResults" | Out-Null
-          $bmp.Save("$env:GITHUB_WORKSPACE/TestResults/desktop-before-tests.png")
+          function Get-TopWindows {
+            $list = New-Object System.Collections.Generic.List[object]
+            [void][Native.Desk]::EnumWindows({ param($h, $l)
+              if ([Native.Desk]::IsWindowVisible($h)) {
+                $r = New-Object Native.Desk+RECT; [void][Native.Desk]::GetWindowRect($h, [ref]$r)
+                if (($r.R - $r.L) -gt 0 -and ($r.B - $r.T) -gt 0) {
+                  $c = New-Object System.Text.StringBuilder 256; [void][Native.Desk]::GetClassName($h, $c, 256)
+                  $t = New-Object System.Text.StringBuilder 256; [void][Native.Desk]::GetWindowText($h, $t, 256)
+                  $procId = [uint32]0; [void][Native.Desk]::GetWindowThreadProcessId($h, [ref]$procId)
+                  $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
+                  $list.Add([pscustomobject]@{ Handle = $h; Process = $name; Pid = $procId; Class = "$c"; Title = "$t"; Rect = "$($r.L),$($r.T) $($r.R - $r.L)x$($r.B - $r.T)" })
+                }
+              }
+              $true }, [IntPtr]::Zero)
+            $list
+          }
+          function Save-Desktop([string]$name) {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/TestResults" | Out-Null
+            $bmp.Save("$env:GITHUB_WORKSPACE/TestResults/$name.png")
+          }
+
+          "system DPI = $([Native.Desk]::GetDpiForSystem()) (96 = 100%), screen = $([Native.Desk]::GetSystemMetrics(0)) x $([Native.Desk]::GetSystemMetrics(1)), arch = $env:PROCESSOR_ARCHITECTURE, session = $((Get-Process -Id $PID).SessionId)"
+          "== visible top-level windows before"
+          Get-TopWindows | Format-Table Process, Pid, Class, Title, Rect -AutoSize | Out-String -Width 220
+          Save-Desktop 'desktop-as-provisioned'
+
+          # First-logon/privacy UI. The page is hosted by these processes; stop them and keep the
+          # experience from being offered again.
+          New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' -Force | Out-Null
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' -Name DisablePrivacyExperience -Value 1 -Type DWord
+          foreach ($name in 'WWAHost', 'CloudExperienceHostBroker', 'UserOOBEBroker', 'OOBENetworkConnectionFlow', 'msoobe') {
+            Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object { "stopping $($_.ProcessName) ($($_.Id))"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+          }
+          # Whatever is still visible and is not the shell gets minimised (SW_MINIMIZE).
+          Start-Sleep -Seconds 2
+          Get-TopWindows | Where-Object { $_.Process -ne 'explorer' -and $_.Class -notin 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW' } |
+            ForEach-Object { "minimising $($_.Process) '$($_.Title)' [$($_.Class)]"; [void][Native.Desk]::ShowWindow($_.Handle, 6) }
+
+          $full = 0; [void][Native.Desk]::SystemParametersInfo(0x0026, 0, [ref]$full, 0)
+          $set = [Native.Desk]::SystemParametersInfo(0x0025, 1, [IntPtr]::Zero, 3)
+          $after = 0; [void][Native.Desk]::SystemParametersInfo(0x0026, 0, [ref]$after, 0)
+          "drag full windows: was=$full set=$set now=$after"
+
+          Start-Sleep -Seconds 1
+          "== visible top-level windows after"
+          Get-TopWindows | Format-Table Process, Pid, Class, Title, Rect -AutoSize | Out-String -Width 220
+          Save-Desktop 'desktop-before-tests'
+          exit 0
 
       - name: Test (DevFlow UI Tests)
         shell: pwsh
