@@ -456,82 +456,6 @@ namespace ToggleTestApp
 			return QueryToggleBars();
 		}
 
-		/// <summary>
-		/// Reports the Window entry state of an anchorable's View Mode menu.
-		/// </summary>
-		/// <remarks>
-		/// <see cref="ToggleDockingManager.BuildToggleContextMenu"/> is intentionally internal to the
-		/// control assembly. Its Window entry is unconditional and takes its enabled and checked state
-		/// directly from the two values reported here, so exposing those values preserves the menu's
-		/// public behaviour without making the implementation detail public.
-		/// </remarks>
-		public string QueryWindowMode(string contentIdOrTitle)
-		{
-			var anchorable = FindAnchorable(contentIdOrTitle);
-
-			return JsonSerializer.Serialize(new Dictionary<string, object>
-			{
-				["contentId"] = anchorable.ContentId,
-				["items"] = new[]
-				{
-					new Dictionary<string, object>
-					{
-						["header"] = "Window",
-						["isEnabled"] = dockManager.AllowDetachedWindows,
-						["isChecked"] = dockManager.IsDetached(anchorable),
-					},
-				},
-			});
-		}
-
-		/// <summary>
-		/// Executes the same Window-mode state change as the View Mode menu entry: detach when docked,
-		/// or return the content to its former dock zone when already detached.
-		/// </summary>
-		public string ToggleWindowMode(string contentIdOrTitle)
-		{
-			var anchorable = FindAnchorable(contentIdOrTitle);
-			if (dockManager.IsDetached(anchorable))
-				dockManager.ReattachAnchorable(anchorable);
-			else
-				dockManager.DetachAnchorableToWindow(anchorable);
-
-			return QueryDetachedWindows();
-		}
-
-		/// <summary>Reports actual standalone windows owned by the docking manager.</summary>
-		public string QueryDetachedWindows()
-		{
-			var windows = Application.Current.Windows.OfType<DetachedAnchorableWindow>().ToArray();
-			return JsonSerializer.Serialize(new Dictionary<string, object>
-			{
-				["count"] = windows.Length,
-				["windows"] = windows.Select(window => new Dictionary<string, object>
-				{
-					["contentId"] = window.Model.ContentId,
-					["title"] = window.Title,
-					["isVisible"] = window.IsVisible,
-					["isActive"] = window.IsActive,
-					["ownerIsNull"] = window.Owner == null,
-					["showInTaskbar"] = window.ShowInTaskbar,
-					["windowStyle"] = window.WindowStyle.ToString(),
-					["resizeMode"] = window.ResizeMode.ToString(),
-					["hasOptionsHeader"] = window.Content is Grid root
-						&& root.Children.OfType<ToggleAnchorablePaneTitle>().Any(),
-				}).ToArray(),
-			});
-		}
-
-		/// <summary>Closes a standalone window through <see cref="Window.Close"/>, as its system close button does.</summary>
-		public string CloseDetachedWindow(string contentIdOrTitle)
-		{
-			var anchorable = FindAnchorable(contentIdOrTitle);
-			var window = Application.Current.Windows.OfType<DetachedAnchorableWindow>()
-				.FirstOrDefault(candidate => candidate.Model == anchorable);
-			window?.Close();
-			return QueryDetachedWindows();
-		}
-
 		/// <summary>Renders a gesture the way a test writes it: "Ctrl+Alt+E".</summary>
 		private static string? DescribeGesture(InputGesture? gesture)
 		{
@@ -576,12 +500,6 @@ namespace ToggleTestApp
 			=> FindToggleButtons().FirstOrDefault(b =>
 				string.Equals(b.Anchorable.ContentId, contentIdOrTitle, StringComparison.Ordinal)
 				|| string.Equals(b.Content?.ToString(), contentIdOrTitle, StringComparison.Ordinal));
-
-		private LayoutAnchorable FindAnchorable(string contentIdOrTitle) =>
-			dockManager.Layout.Descendents().OfType<LayoutAnchorable>().FirstOrDefault(anchorable =>
-				string.Equals(anchorable.ContentId, contentIdOrTitle, StringComparison.Ordinal)
-				|| string.Equals(anchorable.Title, contentIdOrTitle, StringComparison.Ordinal))
-			?? throw new InvalidOperationException($"No tool window matches '{contentIdOrTitle}'.");
 
 		private static Dictionary<string, object> DescribeToggleButton(ToggleDockButton button)
 			=> new()

@@ -1,9 +1,14 @@
 // Static action surface of the sample; see MainWindow.DevFlowActions.cs in TestApp for why the
 // DevFlow actions are static and marshal to the window's thread themselves.
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
+using AvalonDock.Controls;
+using AvalonDock.Layout;
 using LeXtudio.DevFlow.Agent.Core;
 using Microsoft.Maui.DevFlow.Agent.Core;
 
@@ -93,5 +98,73 @@ namespace ToggleTestApp
 
 		[DevFlowAction("avd.detached.close", Description = "Close a standalone Window-mode window through its ordinary close path")]
 		public static string CloseDetachedWindowAction(string contentIdOrTitle) => OnUi(w => w.CloseDetachedWindow(contentIdOrTitle));
+
+		// This partial is omitted from AvalonDockCodeApp.csproj and compiled only by its LibreWPF
+		// twin. Keeping both the agent entry points and their probe implementation here lets an
+		// upstream product-only change avoid MainWindow.xaml.cs entirely.
+		public string QueryWindowMode(string contentIdOrTitle)
+		{
+			var anchorable = FindDevFlowAnchorable(contentIdOrTitle);
+			return JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["contentId"] = anchorable.ContentId,
+				["items"] = new[]
+				{
+					new Dictionary<string, object>
+					{
+						["header"] = "Window",
+						["isEnabled"] = dockManager.AllowDetachedWindows,
+						["isChecked"] = dockManager.IsDetached(anchorable),
+					},
+				},
+			});
+		}
+
+		public string ToggleWindowMode(string contentIdOrTitle)
+		{
+			var anchorable = FindDevFlowAnchorable(contentIdOrTitle);
+			if (dockManager.IsDetached(anchorable))
+				dockManager.ReattachAnchorable(anchorable);
+			else
+				dockManager.DetachAnchorableToWindow(anchorable);
+
+			return QueryDetachedWindows();
+		}
+
+		public string QueryDetachedWindows()
+		{
+			var windows = Application.Current.Windows.OfType<DetachedAnchorableWindow>().ToArray();
+			return JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["count"] = windows.Length,
+				["windows"] = windows.Select(window => new Dictionary<string, object>
+				{
+					["contentId"] = window.Model.ContentId,
+					["title"] = window.Title,
+					["isVisible"] = window.IsVisible,
+					["isActive"] = window.IsActive,
+					["ownerIsNull"] = window.Owner == null,
+					["showInTaskbar"] = window.ShowInTaskbar,
+					["windowStyle"] = window.WindowStyle.ToString(),
+					["resizeMode"] = window.ResizeMode.ToString(),
+					["hasOptionsHeader"] = window.Content is Grid root
+						&& root.Children.OfType<ToggleAnchorablePaneTitle>().Any(),
+				}).ToArray(),
+			});
+		}
+
+		public string CloseDetachedWindow(string contentIdOrTitle)
+		{
+			var anchorable = FindDevFlowAnchorable(contentIdOrTitle);
+			Application.Current.Windows.OfType<DetachedAnchorableWindow>()
+				.FirstOrDefault(candidate => candidate.Model == anchorable)?.Close();
+			return QueryDetachedWindows();
+		}
+
+		private LayoutAnchorable FindDevFlowAnchorable(string contentIdOrTitle) =>
+			dockManager.Layout.Descendents().OfType<LayoutAnchorable>().FirstOrDefault(anchorable =>
+				string.Equals(anchorable.ContentId, contentIdOrTitle, StringComparison.Ordinal)
+				|| string.Equals(anchorable.Title, contentIdOrTitle, StringComparison.Ordinal))
+			?? throw new InvalidOperationException($"No tool window matches '{contentIdOrTitle}'.");
 	}
 }
