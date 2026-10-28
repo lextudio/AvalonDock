@@ -59,7 +59,7 @@ jobs:
         env:
           LEGS: ${{ inputs.legs }}
         run: |
-          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025"},{"name":"windows-arm64","runner":"windows-11-arm","experimental":true}]'
+          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025"},{"name":"windows-arm64","runner":"windows-11-arm"}]'
           legs="$(echo "$LEGS" | tr -d '[:space:]')"
           if [ -z "$legs" ] || [ "$legs" = all ]; then
             matrix="$all"
@@ -86,9 +86,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # windows-x64 gates like the other legs. windows-arm64 is reported but does not fail the run while
-    # one drop-target case still fails intermittently there (a different zone each run, with no overlay
-    # shown); docs/librewpf.md, section 11.7, item 8.
+    # Every leg gates. A leg can still be marked "experimental": true above to report without failing
+    # the run while it is being brought up.
     continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 90
 
@@ -369,16 +368,19 @@ jobs:
           Get-TopWindows | Where-Object { $_.Process -ne 'explorer' -and $_.Class -notin 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW' } |
             ForEach-Object { "minimising $($_.Process) '$($_.Title)' [$($_.Class)]"; [void][Native.Desk]::ShowWindow($_.Handle, 6) }
 
-          # windows-11-arm keeps starting wsl.exe while the tests run, each time in a new Windows
-          # Terminal window that becomes the foreground window over TestApp (the failures named it:
-          # WindowsTerminal, title 'C:\Windows\system32\wsl.exe'). A watchdog for the rest of the job
-          # stops it and records what started it; the runner cleans the watchdog up with the job.
+          # windows-11-arm's WSL app runs `wsl.exe --update --confirm --prompt-before-exit` from
+          # backgroundTaskHost every 30 s, each time in a new Windows Terminal window that becomes the
+          # foreground window over TestApp (the failures named it: WindowsTerminal, title
+          # 'C:\Windows\system32\wsl.exe'). A watchdog for the rest of the job stops exactly that
+          # command and its window, and records what started it; the runner cleans it up with the job.
+          # Other wsl.exe processes are left alone: the x64 image's provisioning agent probes WSL with
+          # a windowless `wsl -u root -e ls`.
           $watchdog = Join-Path $env:RUNNER_TEMP 'desktop-watchdog.ps1'
           $watchdogLog = Join-Path $env:RUNNER_TEMP 'desktop-watchdog.log'
           Set-Content -Path $watchdog -Value @'
           param([string]$Log)
           while ($true) {
-            foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name = 'wsl.exe' OR Name = 'wslhost.exe'" -ErrorAction SilentlyContinue)) {
+            foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name = 'wsl.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*--update*' })) {
               $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $($p.ParentProcessId)" -ErrorAction SilentlyContinue
               Add-Content $Log "$(Get-Date -Format HH:mm:ss.fff) stopping $($p.Name) ($($p.ProcessId)) '$($p.CommandLine)' started by $($parent.Name) ($($p.ParentProcessId)) '$($parent.CommandLine)'"
               Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue

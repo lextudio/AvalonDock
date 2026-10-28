@@ -975,15 +975,15 @@ Becomes simpler, with one honest caveat.
        macOS with `EnableWindowsTargeting`; 224 findings fixed: `dotnet format` for style rules, XML docs
        by hand, regions removed, `CA1502`/`CA1506` suppressed with a justification on
        `LayoutAutoHideWindowControl`, `LayoutFloatingWindowControl` and `OverlayWindow.GetTargets`).
-8. [~] Windows DevFlow legs on LibreWPF. TestApp skips its WinForms pane under LIBREWPF (LibreWinForms
+8. [x] Windows DevFlow legs on LibreWPF. TestApp skips its WinForms pane under LIBREWPF (LibreWinForms
        hands `WindowsFormsHost` a synthetic handle, a LibreWPF gap). The remaining failures were the runner
        desktop, not the code: windows-11-arm logs in to the first-logon privacy page (a full-screen window
-       that took every real click) and then leaves the Start menu open, it keeps starting `wsl.exe` in a new Windows Terminal window that
-       takes the foreground during the tests, and the agent's console window
+       that took every real click) and then leaves the Start menu open, its WSL app runs `wsl.exe --update` every 30 s in a new Windows
+       Terminal window that takes the foreground during the tests, and the agent's console window
        covers part of the desktop on both images. `ci-librewpf.yml` now prepares the desktop (stops the
        first-logon host, dismisses the Start menu, minimises other windows, runs a watchdog that stops
-       `wsl.exe` and logs what started it) and uploads screenshots;
-       windows-x64 passes 118/118 and gates the run; windows-arm64 stays `continue-on-error` until it is green too.
+       that `wsl.exe --update` and logs what started it) and uploads screenshots;
+       Both Windows legs pass 118/118 and gate the run like the others.
        `release-librewpf.yml` runs no tests at all: it packs once on macOS and requires a green CI
        (LibreWPF) push run for the commit.
 9. [x] `AGENTS.md` describes both lines.
