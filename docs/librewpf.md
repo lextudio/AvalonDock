@@ -886,7 +886,7 @@ source/
   ci.yml                  WPF: Windows build, unit tests (and FlaUI)
   release.yml             WPF: tag v* -> nuget.org (upstream behaviour)
   ci-librewpf.yml         LibreWPF: push to opendevelop + dispatch, DevFlow on five legs
-  release-librewpf.yml    LibreWPF: validate on Windows/macOS/Linux, publish the OpenDevelop closure to GitHub Packages (tag librewpf-v*)
+  release-librewpf.yml    LibreWPF: pack the OpenDevelop closure once (macOS) and publish it to GitHub Packages (tag librewpf-v*); no tests, requires a green CI (LibreWPF) push run for the commit
 ```
 
 Package mapping (what OpenDevelop consumes, from `NuGet.config`):
@@ -975,11 +975,15 @@ Becomes simpler, with one honest caveat.
        macOS with `EnableWindowsTargeting`; 224 findings fixed: `dotnet format` for style rules, XML docs
        by hand, regions removed, `CA1502`/`CA1506` suppressed with a justification on
        `LayoutAutoHideWindowControl`, `LayoutFloatingWindowControl` and `OverlayWindow.GetTargets`).
-8. [~] Windows DevFlow legs on LibreWPF: every case failed to start the app because of a LibreWPF
-       `WindowsFormsHost` gap, fixed in LibreWPF (section 11.9), to be verified after the package publish; the
-       legs are `continue-on-error` in `ci-librewpf.yml` and not a release gate in
-       `release-librewpf.yml` until LibreWPF can host `HwndHost` content on Windows. The Windows skip logic in
-       `NativeInputEnvironment` and `KnownLibreWpfGaps.IsLibreWpf` stays as it was.
+8. [~] Windows DevFlow legs on LibreWPF. TestApp skips its WinForms pane under LIBREWPF (LibreWinForms
+       hands `WindowsFormsHost` a synthetic handle, a LibreWPF gap). The remaining failures were the runner
+       desktop, not the code: windows-11-arm logs in to the first-logon privacy page (a full-screen window
+       that took every real click) and then leaves the Start menu open, and the agent's console window
+       covers part of the desktop on both images. `ci-librewpf.yml` now prepares the desktop (stops the
+       first-logon host, dismisses the Start menu, minimises other windows) and uploads screenshots;
+       windows-x64 passes 118/118. The legs stay `continue-on-error` until windows-arm64 is green too.
+       `release-librewpf.yml` runs no tests at all: it packs once on macOS and requires a green CI
+       (LibreWPF) push run for the commit.
 9. [x] `AGENTS.md` describes both lines.
 
 ### 11.8 Related work in other repositories
