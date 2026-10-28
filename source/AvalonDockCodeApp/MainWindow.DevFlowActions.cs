@@ -81,5 +81,17 @@ namespace ToggleTestApp
 
 		[DevFlowAction("avd.layout.load-unknown", Description = "Load a saved layout that also carries a tool window unknown to this app")]
 		public static string LoadLayoutWithUnknownToolboxAction() => OnUi(w => w.LoadLayoutWithUnknownToolbox());
+
+		[DevFlowAction("avd.window-mode.query", Description = "Query the live View Mode menu entries for a toolbox")]
+		public static string QueryWindowModeAction(string contentIdOrTitle) => OnUi(w => w.QueryWindowMode(contentIdOrTitle));
+
+		[DevFlowAction("avd.window-mode.toggle", Description = "Select View Mode > Window; selecting it again docks the toolbox")]
+		public static string ToggleWindowModeAction(string contentIdOrTitle) => OnUi(w => w.ToggleWindowMode(contentIdOrTitle));
+
+		[DevFlowAction("avd.detached.query", Description = "Query standalone Window-mode windows owned by the docking manager")]
+		public static string QueryDetachedWindowsAction() => OnUi(w => w.QueryDetachedWindows());
+
+		[DevFlowAction("avd.detached.close", Description = "Close a standalone Window-mode window through its ordinary close path")]
+		public static string CloseDetachedWindowAction(string contentIdOrTitle) => OnUi(w => w.CloseDetachedWindow(contentIdOrTitle));
 	}
 }

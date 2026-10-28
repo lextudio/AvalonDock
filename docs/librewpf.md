@@ -582,6 +582,19 @@ pointer injection, ProGPU backend); they do not prove the FlaUI coverage has mov
 | `LayoutSerializationExtendedTests` | 5 | 3 |
 | `ManagerLifecycleTests` | 4 | 3 |
 
+**Additional ports (31 cases, pending CI):**
+
+| Suite | Cases | Batch |
+|---|---:|---|
+| `StressTests` | 7 | 4 |
+| `ToggleDockTests` | 11 | 4 |
+| `ToggleDockSerializationTests` | 4 | 4 |
+| `ToggleDockShortcutTests` | 2 | 4 |
+| `DetachedWindowTests` | 7 | 5 |
+
+With these batches, **all 92** FlaUI cases have a DevFlow equivalent. Once rebuilt, DevFlow test
+discovery should increase from 118 to **149** cases (57 pre-existing cases + 92 ports).
+
 Method names and `IssueNNN` suffixes are kept, so a failure still names the regression it did
 before. Assertions the original spec marks as vacuous are replaced by the behaviour: "the app has not
 exited" after a tab click becomes "that tab is now active"; tool-window content is read from that tool
@@ -781,17 +794,10 @@ The first pass's items are addressed; three should-fix items from the second pas
   backend-limitation exceptions; `EditMenu_OpensAndCloses` now asserts every item is command-bound and
   reports `isEnabled`, with the comment corrected. The OpenCode reviewer approved this tree.
 
-### Remaining porting work
+### FlaUI retirement work
 
-| Suite | Cases | Fixture |
-|---|---:|---|
-| `DetachedWindowTests` | 7 | TestApp (9223) |
-| `StressTests` | 7 | TestApp |
-| `ToggleDockTests` | 11 | AvalonDockCodeApp (9224) |
-| `ToggleDockSerializationTests` | 4 | AvalonDockCodeApp |
-| `ToggleDockShortcutTests` | 2 | AvalonDockCodeApp |
-
-After that: delete `source/AutomationTest/AvalonDockTest/FlaUI`, the `Category=FlaUI` CI step and the
+The functional port is complete. Before removing the old FlaUI project, run the five DevFlow legs
+against the 149-case suite and then delete `source/AutomationTest/AvalonDockTest/FlaUI`, the `Category=FlaUI` CI step and the
 FlaUI package references, drop the `Category!=FlaUI` filter (also in `release.yml`), and re-run the
 five legs.
 
