@@ -247,8 +247,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 				var reached = await WaitForCurrentDropTargetAsync(client, zoneType, target, ct);
 				if (!reached.Reached)
 				{
+					// Taken while the button is still held: which window owns the target point, and whether
+					// the floating window moved at all (an empty Targets list means no overlay was shown).
+					var nativeWindow = WindowsDesktopProbe.DescribePoint(target.CenterX, target.CenterY);
+					var heldDragState = string.IsNullOrEmpty(reached.DragState) ? await client.InvokeAsync("avd.query.drag-state") : reached.DragState;
 					await dropGesture.ReleaseAsync(ct);
-					return (false, $"live drop target '{zoneType}' was not current before release; Target={target.CenterX},{target.CenterY}; Targets={reached.Targets}", null);
+					return (false, $"live drop target '{zoneType}' was not current before release; Target={target.CenterX},{target.CenterY}; Targets={reached.Targets}; " +
+						$"NativeWindow=[{nativeWindow}]; DragState={heldDragState}", null);
 				}
 
 				var preview = ParsePreviewBounds(reached.DragState, zoneType);

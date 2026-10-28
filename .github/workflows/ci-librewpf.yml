@@ -59,7 +59,7 @@ jobs:
         env:
           LEGS: ${{ inputs.legs }}
         run: |
-          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025","experimental":true},{"name":"windows-arm64","runner":"windows-11-arm","experimental":true}]'
+          all='[{"name":"linux-x64","runner":"ubuntu-24.04"},{"name":"linux-arm64","runner":"ubuntu-24.04-arm"},{"name":"macos-arm64","runner":"macos-15"},{"name":"windows-x64","runner":"windows-2025"},{"name":"windows-arm64","runner":"windows-11-arm","experimental":true}]'
           legs="$(echo "$LEGS" | tr -d '[:space:]')"
           if [ -z "$legs" ] || [ "$legs" = all ]; then
             matrix="$all"
@@ -86,9 +86,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # LibreWPF on Windows cannot create the child HwndSource AvalonDock's HwndHost content needs yet (the
-    # presentation source there is a native HwndSource; BuildWindowCore gets no handle back), so those
-    # legs are reported but do not fail the run. docs/librewpf.md, section 11.9.
+    # windows-x64 gates like the other legs. windows-arm64 is reported but does not fail the run while
+    # one drop-target case still fails intermittently there (a different zone each run, with no overlay
+    # shown); docs/librewpf.md, section 11.7, item 8.
     continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 90
 
