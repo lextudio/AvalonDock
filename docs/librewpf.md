@@ -1045,10 +1045,50 @@ Becomes simpler, with one honest caveat.
   the installed cliclick (which the CI installs) is preferred again and CliclickSharp is the fallback; Windows
   keeps CliclickSharp.exe. Whether the C# port can match the original on macOS is a DevFlow (ui-labs) question.
 - 2026-10-27 (macOS, run on a real desktop with Accessibility granted to Claude.app): `DragDockedPaneResizer_ResizesToolPane`
-  passed as is; `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed with a real geometry bug:
-  `DropTarget.GetScreenBounds()` multiplied the stored detection rectangles by the window's DPI scale
-  (2 on Retina), but off Windows `TransformToDeviceDPI` does not divide by it, so the rectangles are already
-  in points and every indicator came out at twice its position (y 385 became 770, below the manager). CI never
-  showed it because the runner's display is 1x. Fixed in AvalonDock (same platform gate as
-  `TransformToDeviceDPI`); the whole `NativeInputIntegrationTests` class is 5/5 locally. The two cases now
-  skip only when `GITHUB_ACTIONS` is set on macOS.
+  passed as is; `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed on `DockingManagerDockLeft`
+  reporting y=770 below the manager (y 77 to 733). Cause: `DropTarget.GetScreenBounds()` multiplied the stored
+  detection rectangles by the window's DPI scale (2 on Retina) although they are already screen coordinates in
+  logical units. CI never showed it because the runner's display is 1x. Fixed in AvalonDock (the contract is in
+  11.10); `NativeInputIntegrationTests` is 5/5 on the Mac desktop. The two cases now skip only when `GITHUB_ACTIONS`
+  is set on macOS.
+
+### 11.10 The screen-coordinate contract of a portable source (read this before touching DPI code)
+
+Measured on a Retina Mac (window at Left/Top 200,150, content element at +40,+60):
+`CompositionTarget.TransformToDevice` is `2 x 2`, `PointToScreen` returns `240,210`. That is intended
+by LibreWPF, not a bug: `PointUtil` states that "portable clients use the native platform's logical
+coordinate space (the same space as Window.Left/Top and input events)" and that the device transform stays
+"on the rendering target" without being applied "to the public screen/client coordinate contract". A native
+Windows window (`HwndSource`) keeps WPF's contract of device pixels.
+
+What AvalonDock must do:
+
+- Never multiply or divide a `PointToScreen` result by `TransformToDevice` when the source is portable.
+  `TransformExtentions.PointToScreenDPI` and `DropTarget.GetScreenBounds` follow the rule through
+  `PlatformHelper.UsesLogicalScreenCoordinates`; add any new DPI code behind the same function.
+- Code that compares stored rectangles with a drag point goes through `TransformToDeviceDPI` on both sides
+  (see `DropTarget.HitTest`); keep both sides in the same space.
+
+Known limitation, and the item that belongs to LibreWPF: the criterion should be the kind of source, but
+there is no public way to ask. `PresentationSource.FromVisual` returns an `HwndSource` on macOS as well (a
+portable facade whose `IsPortable` is internal), so "not an `HwndSource`" does not mean portable (tried; it
+brought the Retina bug straight back). `UsesLogicalScreenCoordinates` therefore decides by operating system,
+which equals the lane today (non-Windows is portable, Windows is native). **To request from LibreWPF**: a
+public way to read which coordinate contract a source uses (for example a public `HwndSource.IsPortable`).
+When it exists, `UsesLogicalScreenCoordinates` becomes a one-line change and the Windows lane keeps working if
+it ever gets portable windows.
+
+Why it stayed hidden: the macOS CI runner has a 1x display, where the scale is 1 and the wrong multiplication
+changes nothing; only a Retina desktop shows it. Run the native-input cases on a real Mac before trusting a
+DPI change.
+
+### 11.11 Running the native-input cases on a Mac desktop
+
+`cliclick` needs Accessibility permission for the app that launches the shell (for Claude Code in Claude Desktop:
+`/Applications/Claude.app`; on current macOS the list has no "+" button, so trigger the prompt with
+`AXIsProcessTrustedWithOptions` and prompt = true, then enable the entry and restart the app). Local recipe, all
+local-only edits that must not be committed: a SDK in `global.json` that is installed, and a different DevFlow port
+if 9223 is taken (the `DefaultPort` in `IntegrationTestBase.cs` and the port in `DevFlowAppFixture.cs`). Run with
+`DEVFLOW_RUN_KNOWN_GAPS=1` to include the cases skipped on the CI runner:
+`dotnet run --project source/DevFlowIntegrationTests -c Debug --no-build -- --filter-class '*NativeInputIntegrationTests' --parallel none`.
+The cases move the real pointer for a few minutes; do not touch the machine meanwhile.

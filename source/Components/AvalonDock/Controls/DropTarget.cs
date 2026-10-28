@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AvalonDock.Layout;
+using AvalonDock.Platform;
 
 namespace AvalonDock.Controls
 {
@@ -120,10 +121,11 @@ namespace AvalonDock.Controls
 			if (!IsFinite(scaleX) || scaleX <= 0.0) scaleX = 1.0;
 			if (!IsFinite(scaleY) || scaleY <= 0.0) scaleY = 1.0;
 
-			// Off Windows TransformToDeviceDPI does not divide by the DPI scale (screen coordinates are
-			// already in points there), so the stored rectangles are in points and must not be scaled
-			// back up - on a Retina display that put every indicator at twice its position.
-			if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+			// A portable source reports screen coordinates in logical units, and PointToScreenDPI does not
+			// divide them by the DPI scale, so the stored rectangles are already screen coordinates; scaling
+			// them up again doubled every indicator position on a Retina display. The rule is the one
+			// PointToScreenDPI uses (PlatformHelper.UsesLogicalScreenCoordinates).
+			if (PlatformHelper.UsesLogicalScreenCoordinates(_targetElement))
 			{
 				scaleX = 1.0;
 				scaleY = 1.0;

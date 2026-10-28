@@ -44,7 +44,9 @@ namespace AvalonDock.Controls
 			}
 
 			Point resultPt = visual.PointToScreen(pt);
-			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+
+			// A portable source already reports logical units (see PlatformHelper.UsesLogicalScreenCoordinates).
+			if (PlatformHelper.UsesLogicalScreenCoordinates(visual))
 				return resultPt;
 
 			return TransformToDeviceDPI(visual, resultPt);

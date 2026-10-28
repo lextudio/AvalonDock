@@ -11,6 +11,33 @@ namespace AvalonDock.Platform
 	/// </summary>
 	internal static class PlatformHelper
 	{
+		/// <summary>
+		/// Gets a value indicating whether screen coordinates reported for the visual are logical units
+		/// (points) rather than device pixels.
+		/// </summary>
+		/// <remarks>
+		/// LibreWPF documents this contract in <c>PointUtil</c>: a portable presentation source reports
+		/// screen and client coordinates in the platform's logical coordinate space, the same space as
+		/// <c>Window.Left</c>/<c>Top</c> and input events, and keeps <c>TransformToDevice</c> on the
+		/// rendering target only; a native Windows window keeps the WPF contract of device pixels.
+		/// The criterion is therefore the kind of source, but LibreWPF exposes no public way to ask:
+		/// <c>PresentationSource.FromVisual</c> returns an <see cref="System.Windows.Interop.HwndSource"/>
+		/// on macOS too (a portable facade whose <c>IsPortable</c> is internal). Until LibreWPF offers one
+		/// (tracked in docs/librewpf.md, section 11.10) this is decided by the operating system, which is
+		/// what the portable lane equals today: every non-Windows window is portable, every Windows window
+		/// is native. Real WPF always reports device pixels.
+		/// </remarks>
+		/// <param name="visual">The visual the coordinates belong to (kept for the day the source decides).</param>
+		/// <returns><c>true</c> when <c>PointToScreen</c> results are already in logical units.</returns>
+		internal static bool UsesLogicalScreenCoordinates(System.Windows.Media.Visual visual)
+		{
+#if LIBREWPF
+			return visual != null && !System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+#else
+			return false;
+#endif
+		}
+
 		private sealed class NativeWindowHandle
 		{
 			internal NativeWindowHandle(IntPtr value) => Value = value;
