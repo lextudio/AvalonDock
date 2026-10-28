@@ -26,29 +26,51 @@ env:
   NuGetPackageSourceCredentials_openavalon-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
 
 jobs:
+  # A manual publish of an opendevelop commit that CI (LibreWPF) has already passed on every leg does
+  # not test it again: it only builds and packs on macOS. Re-running the whole DevFlow suite for the
+  # same commit doubled every publish (the duplicate runs this replaces). Tags, master and pull
+  # requests, and a commit without a green CI run, still get the full validation below.
+  plan:
+    name: Plan validation
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # macos-arm64 is the leg whose packages are published, so it is always present.
+          # windows-x64 builds the closure without DevFlow; the DevFlow legs on Windows are gated by
+          # CI (LibreWPF) instead (docs/librewpf.md, 11.9).
+          full='[{"name":"windows-x64","runner":"windows-2025","devflow":false},
+                 {"name":"macos-arm64","runner":"macos-15","devflow":true},
+                 {"name":"linux-x64","runner":"ubuntu-24.04","devflow":true}]'
+          matrix="$full"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # Only a push run covers every leg (a dispatched CI run may have filtered them).
+            tested=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci-librewpf.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success" --jq '.workflow_runs[0].html_url // empty')
+            if [ -n "$tested" ]; then
+              echo "CI (LibreWPF) already passed this commit on every leg: $tested"
+              matrix='[{"name":"macos-arm64","runner":"macos-15","devflow":false}]'
+            else
+              echo "No successful CI (LibreWPF) push run for $GITHUB_SHA; validating every leg here."
+            fi
+          fi
+          echo "matrix=$(echo "$matrix" | jq -c .)" >> "$GITHUB_OUTPUT"
+
   validate:
     name: Validate (${{ matrix.name }})
+    needs: plan
     strategy:
       # With fail-fast disabled every leg still reports, but `publish` waits for all of them: a red
       # Linux leg blocks a publish just like a red Windows one.
       fail-fast: false
       matrix:
-        include:
-          # LibreWPF on Windows: the same closure is built, but the DevFlow suite does not gate the
-          # release yet (LibreWPF cannot create child HwndSource windows on Windows yet; docs/librewpf.md, 11.9).
-          # The NUnit and FlaUI suites run on real WPF in the WPF line's own workflow (ci.yml).
-          - name: windows-x64
-            runner: windows-2025
-            devflow: false
-          # This is the leg whose packages are published, so it runs the DevFlow suite too: a package
-          # that cannot dock a pane on macOS must not ship.
-          - name: macos-arm64
-            runner: macos-15
-            devflow: true
-          # Build the closure and run the DevFlow docking/drag/drop suite against it under Xvfb.
-          - name: linux-x64
-            runner: ubuntu-24.04
-            devflow: true
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
 

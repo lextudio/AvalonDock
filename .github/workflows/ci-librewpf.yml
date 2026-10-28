@@ -5,8 +5,18 @@ name: CI (LibreWPF)
 
 on:
   # The OpenAvalon work happens on this branch; every push runs all legs (empty inputs mean "all").
+  # A push that only touches the original WPF line (its FlaUI suite and workflows) or documentation
+  # cannot change this result, so it does not start a redundant run.
   push:
     branches: [opendevelop]
+    paths-ignore:
+      - 'source/AutomationTest/**'
+      - 'source/AvalonDock.sln'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/docs.yml'
+      - 'docs/**'
+      - '**/*.md'
   # The legs cannot all be validated on a developer machine (they need a throwaway X server on Linux
   # and a GUI session on macOS), so allow them to be run on demand.
   workflow_dispatch:
