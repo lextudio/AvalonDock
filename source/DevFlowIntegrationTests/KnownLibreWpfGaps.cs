@@ -25,14 +25,18 @@ namespace AvalonDock.DevFlowIntegrationTests
 				Assert.Skip($"Known LibreWPF gap (passes on real WPF): {gap}");
 		}
 
-		/// <summary>Skips on macOS unless known gaps were asked for.</summary>
+		/// <summary>
+		/// Skips on a macOS CI runner (no real desktop session) unless known gaps were asked for. On a
+		/// Mac with a desktop session these cases run and pass.
+		/// </summary>
 		public static void SkipOnMacOS(string gap)
 		{
-			if (OperatingSystem.IsMacOS() && !RunAnyway)
-				Assert.Skip($"Known LibreWPF/macOS gap: {gap}");
+			var onRunner = string.Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true", StringComparison.Ordinal);
+			if (OperatingSystem.IsMacOS() && onRunner && !RunAnyway)
+				Assert.Skip($"Known macOS CI-runner gap: {gap}");
 		}
 
 		public const string MacNativeDrag =
-			"the cliclick-driven drag/resizer gesture does not reach AvalonDock on the macOS runner";
+			"the cliclick-driven drag/resizer gesture does not reach AvalonDock on the macOS CI runner (no real desktop session); both cases pass on a Mac desktop";
 	}
 }

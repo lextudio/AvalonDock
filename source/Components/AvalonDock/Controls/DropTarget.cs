@@ -120,6 +120,15 @@ namespace AvalonDock.Controls
 			if (!IsFinite(scaleX) || scaleX <= 0.0) scaleX = 1.0;
 			if (!IsFinite(scaleY) || scaleY <= 0.0) scaleY = 1.0;
 
+			// Off Windows TransformToDeviceDPI does not divide by the DPI scale (screen coordinates are
+			// already in points there), so the stored rectangles are in points and must not be scaled
+			// back up - on a Retina display that put every indicator at twice its position.
+			if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+			{
+				scaleX = 1.0;
+				scaleY = 1.0;
+			}
+
 			var union = Rect.Empty;
 			foreach (var rect in _detectionRect)
 			{

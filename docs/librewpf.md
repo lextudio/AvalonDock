@@ -722,7 +722,7 @@ test, so they are skipped on LibreWPF with the reason in the skip message;
 | Gap | Cases | Evidence |
 |---|---|---|
 | Tool tab click | `ClickToolWindowTab_ActivatesIt_Issue375`, `ToolWindowContent_IsAccessible`, `SaveLoadLayout_WithToolWindowStates_Issue59` | Even with the pane widened to 300, the centre of Tool Window 1's tab header (as `TransformToAncestor` reports it) hit-tests to `Tool Window 2`, and that is what activates. The anchorable tab panel is arranged differently from WPF |
-| macOS native drag | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` (macOS only) | Failed on the macOS runner in every run since the matrix was added (the overlay never appears, the resizer never moves); Linux runs the same cases green through XTest |
+| macOS native drag (CI runner only) | `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout`, `DragDockedPaneResizer_ResizesToolPane` | Skipped only on the macOS CI runner, which has no real desktop session for cliclick; both pass on a Mac with a desktop (checked 2026-10-27, together with the rest of `NativeInputIntegrationTests`). The local run also found a real macOS bug, fixed: see below |
 
 Fixed: **Floating size to content (#174)**. `UpdateWindowsSizeBasedOnMinSize` was driven only by the
 Win32 `WM_ACTIVATE` hook, which the portable `HwndSource` never delivers, so the window stayed at
@@ -1044,3 +1044,11 @@ Becomes simpler, with one honest caveat.
   CliclickSharp took priority on macOS (`ecac77d`): the same drags stopped reaching the drop targets. On macOS
   the installed cliclick (which the CI installs) is preferred again and CliclickSharp is the fallback; Windows
   keeps CliclickSharp.exe. Whether the C# port can match the original on macOS is a DevFlow (ui-labs) question.
+- 2026-10-27 (macOS, run on a real desktop with Accessibility granted to Claude.app): `DragDockedPaneResizer_ResizesToolPane`
+  passed as is; `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed with a real geometry bug:
+  `DropTarget.GetScreenBounds()` multiplied the stored detection rectangles by the window's DPI scale
+  (2 on Retina), but off Windows `TransformToDeviceDPI` does not divide by it, so the rectangles are already
+  in points and every indicator came out at twice its position (y 385 became 770, below the manager). CI never
+  showed it because the runner's display is 1x. Fixed in AvalonDock (same platform gate as
+  `TransformToDeviceDPI`); the whole `NativeInputIntegrationTests` class is 5/5 locally. The two cases now
+  skip only when `GITHUB_ACTIONS` is set on macOS.
