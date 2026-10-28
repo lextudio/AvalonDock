@@ -566,7 +566,8 @@ namespace AvalonDock.DevFlowIntegrationTests
 				throw new Xunit.Sdk.XunitException(
 					$"Refusing to start a real mouse drag because the OS mouse did not land on the requested AvalonDock handle. " +
 					$"Requested={screenX},{screenY}; WpfMouse={mouseX},{mouseY}; ActualScreenFromWpf={actualScreenX},{actualScreenY}; " +
-					$"Handle={handle}; Manager={manager}; Input={input}; Hit={hit}; PlatformBefore={platformBefore}; PlatformAfter={platformAfter}");
+					$"Handle={handle}; Manager={manager}; Input={input}; Hit={hit}; NativeWindow=[{WindowsDesktopProbe.DescribePoint(screenX, screenY)}]; " +
+					$"PlatformBefore={platformBefore}; PlatformAfter={platformAfter}");
 			}
 
 			/// <summary>
