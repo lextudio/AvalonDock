@@ -101,7 +101,9 @@ namespace AvalonDock.Platform
 		{
 			if (windowHandle == IntPtr.Zero) return (0, 0);
 
-			var point = new Point(0, 0);
+			// ClientToScreen writes a Win32 POINT (two int32); marshalling it into System.Windows.Point (two
+			// doubles) read the bits of both integers as one double and left Y at zero.
+			var point = new NativePoint { X = 0, Y = 0 };
 			ClientToScreen(windowHandle, ref point);
 			return (point.X, point.Y);
 		}
@@ -139,7 +141,14 @@ namespace AvalonDock.Platform
 
 		[DllImport("user32.dll")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		private static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
+		private static extern bool ClientToScreen(IntPtr hWnd, ref NativePoint lpPoint);
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativePoint
+		{
+			public int X;
+			public int Y;
+		}
 
 		[StructLayout(LayoutKind.Sequential)]
 		private struct RECT

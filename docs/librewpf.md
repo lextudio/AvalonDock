@@ -1092,3 +1092,16 @@ if 9223 is taken (the `DefaultPort` in `IntegrationTestBase.cs` and the port in 
 `DEVFLOW_RUN_KNOWN_GAPS=1` to include the cases skipped on the CI runner:
 `dotnet run --project source/DevFlowIntegrationTests -c Debug --no-build -- --filter-class '*NativeInputIntegrationTests' --parallel none`.
 The cases move the real pointer for a few minutes; do not touch the machine meanwhile.
+- 2026-10-27 (Windows x64 VM, local run; reported by the VM session): the 24 Windows x64 failures have two causes.
+  (1) The input tool: on Windows `CliclickSharp`'s `Program.Main` passed the raw arguments to
+  `WindowsCommandExecutor.Execute`, so `-w` was taken as the first command, failed, and the process exited 1
+  before `dd` - **no held drag ever ran on Windows** (all 24 fail at `Assert.Equal(0, _process.ExitCode)`). Not a
+  lost button state between invocations. Fix is in the DevFlow repo (`external/cliclick-sharp`): parse the options
+  on every platform and hand the parsed commands to the Windows executor, honouring `-w` between commands and
+  `-r`; with it all 22 `DropTargetZoneIntegrationTests` and `DragDocumentPaneBody_DoesNotFloatDocumentTab` pass.
+  The shipped `dist/CliclickSharp.exe` is Native AOT and must be rebuilt on a machine with the C++ tools.
+  (2) **An AvalonDock bug that also hits classic WPF on Windows**: `WindowsNativeWindowService.GetWindowContentOrigin`
+  declared `ClientToScreen(IntPtr, ref System.Windows.Point)`; Win32 writes a `POINT` of two int32, so X came back as
+  8.1e-312 and Y as 0 and `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed with "Floating window
+  is not following the pointer". Fixed with an int `POINT`. The arm64-only failures could not be checked on an x64 VM;
+  they may share cause (1).
