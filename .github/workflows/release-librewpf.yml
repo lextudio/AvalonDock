@@ -1,0 +1,466 @@
+# The LibreWPF line: validates the *.LibreWPF projects on Windows, macOS and Linux, then publishes the
+# OpenDevelop package closure to GitHub Packages. The original WPF line's release (tag v*, nuget.org)
+# is release.yml; see docs/librewpf.md, section 11.
+name: Release (LibreWPF)
+
+on:
+  push:
+    branches: [master]
+    tags: ['librewpf-v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also publish the validated packages to GitHub Packages, replacing any same-version packages (opendevelop branch only; no tag, no GitHub Release)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # OpenAvalon grants this repository's Actions GITHUB_TOKEN read access to its packages.
+  NuGetPackageSourceCredentials_openavalon-github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.name }})
+    strategy:
+      # With fail-fast disabled every leg still reports, but `publish` waits for all of them: a red
+      # Linux leg blocks a publish just like a red Windows one.
+      fail-fast: false
+      matrix:
+        include:
+          # LibreWPF on Windows: the same closure is built, but the DevFlow suite does not gate the
+          # release yet (LibreWPF cannot create child HwndSource windows on Windows yet; docs/librewpf.md, 11.9).
+          # The NUnit and FlaUI suites run on real WPF in the WPF line's own workflow (ci.yml).
+          - name: windows-x64
+            runner: windows-2025
+            devflow: false
+          # This is the leg whose packages are published, so it runs the DevFlow suite too: a package
+          # that cannot dock a pane on macOS must not ship.
+          - name: macos-arm64
+            runner: macos-15
+            devflow: true
+          # Build the closure and run the DevFlow docking/drag/drop suite against it under Xvfb.
+          - name: linux-x64
+            runner: ubuntu-24.04
+            devflow: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 11 preview SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+      # The payload targets net10.0-windows, and TestApp starts through `dotnet run` (no roll-forward
+      # on the child process), so the 10 runtime has to be installed where tests run.
+      - name: Setup .NET 10 runtime
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      # Silk.NET's GLFW build is linked against the whole X11 extension set, Wayland and libdecor, so a
+      # runner missing any of them cannot even dlopen libglfw - which surfaces as Silk's opaque
+      # "Couldn't find a suitable window platform. (GlfwPlatform - not applicable)" instead of a
+      # loader error. Install them explicitly rather than relying on the image.
+      - name: Install headless desktop stack (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb openbox x11-utils x11-xserver-utils \
+            libx11-6 libx11-xcb1 libxext6 libxtst6 libxrandr2 libxrender1 libxxf86vm1 \
+            libxi6 libxcursor1 libxinerama1 \
+            libxkbcommon0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libdecor-0-0 \
+            libgl1 libglx-mesa0 libegl1 libgbm1 \
+            mesa-vulkan-drivers libvulkan1 \
+            libc++1 libc++abi1 libunwind8
+
+      - name: Start X server and window manager (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 +extension RANDR +extension GLX +extension XTEST &
+          for _ in $(seq 1 30); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 1; done
+          xdpyinfo -display :99 >/dev/null || { echo "::error::Xvfb failed to start"; exit 1; }
+          DISPLAY=:99 openbox &
+          # Wait for the WM to advertise EWMH, otherwise every z-order assertion silently skips.
+          for _ in $(seq 1 30); do
+            DISPLAY=:99 xprop -root _NET_SUPPORTED 2>/dev/null | grep -q _NET_CLIENT_LIST_STACKING && break
+            sleep 1
+          done
+          DISPLAY=:99 xprop -root _NET_SUPPORTED | grep -q _NET_CLIENT_LIST_STACKING \
+            || echo "::warning::EWMH stacking unavailable - z-order assertions will skip"
+          runtime_dir="$(mktemp -d)"
+          chmod 700 "$runtime_dir"
+          {
+            echo "DISPLAY=:99"
+            # GLFW probes Wayland before X11 without this; an Xvfb desktop is X11 and ProGPU's
+            # selector honours the override.
+            echo "XDG_RUNTIME_DIR=$runtime_dir"
+            echo "PROGPU_WPF_LINUX_WINDOWING=x11"
+            # Do not force a wgpu backend here. WGPU_BACKEND is not the knob ProGPU reads (it has
+            # PROGPU_WGPU_BACKEND), and asking for Vulkan on this runner aborted TestApp inside
+            # wgpuInstanceCreateSurface: the HAL surface is None when the instance has no backend at
+            # all, i.e. Vulkan failed to initialise and there was no fallback. Automatic selection
+            # keeps the GLES/EGL instance as a fallback; these settings make Mesa resolve it to
+            # llvmpipe, exactly as LibreWPF's own eng/progpu-wpf-linux-multi-window-smoke.sh does.
+            echo "EGL_PLATFORM=x11"
+            echo "LIBGL_ALWAYS_SOFTWARE=1"
+            echo "GALLIUM_DRIVER=llvmpipe"
+          } >> "$GITHUB_ENV"
+
+      # macOS has no Xvfb equivalent: the agent posts real CGEvent events, and cliclick is the tool
+      # that does it (the agent picks it up from PATH). Without it only the non-input tests can run.
+      - name: Install cliclick (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cliclick
+
+      # OpenAvalon republishes the same 0.1.0-preview.N versions with new bits, and NuGet never looks a
+      # package up again once it is in the global packages folder - so a cache keyed only on the pinned
+      # version would keep testing an older build of the same version. The feed's own revision of the
+      # pinned LibreWPF.Sdk is what the key is derived from, which also proves the feed is reachable
+      # before anything is cached.
+      - name: Resolve the OpenAvalon package revision
+        id: feed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $sdk = (Get-Content global.json -Raw | ConvertFrom-Json).'msbuild-sdks'.'LibreWPF.Sdk'
+          if (-not $sdk) { throw 'global.json does not pin LibreWPF.Sdk.' }
+          $revisions = @(gh api --paginate "/orgs/lextudio/packages/nuget/librewpf.sdk/versions?per_page=100" --jq ".[] | select(.name == `"$sdk`") | .updated_at")
+          $revision = @($revisions | Where-Object { "$_" -match '\S' }) | Select-Object -First 1
+          if (-not $revision) {
+            # The org container API needs package read access this repository's token may not have. A
+            # key that is unique per run costs one cold restore; reusing a key it cannot invalidate
+            # could silently test an older build of the same version, which is the worse outcome.
+            Write-Warning "Cannot read the OpenAvalon revision of LibreWPF.Sdk $sdk; restoring without a cache hit."
+            $revision = "run-$env:GITHUB_RUN_ID"
+          }
+          # The DevFlow packages are republished at the nuget.org version number for the same reason.
+          $devflow = @(gh api --paginate "/orgs/lextudio/packages/nuget/lextudio.devflow.agent.core/versions?per_page=100" --jq ".[] | select(.name == `"0.3.1`") | .updated_at" 2>$null) |
+            Where-Object { "$_" -match '\S' } | Select-Object -First 1
+          if ($devflow) { $revision = "$revision-$devflow" }
+          "revision=$($revision -replace '[^0-9A-Za-z]', '')" >> $env:GITHUB_OUTPUT
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ matrix.name }}-${{ steps.feed.outputs.revision }}-${{ hashFiles('global.json', 'NuGet.config', 'source/**/*.csproj', 'source/**/*.props') }}
+
+      - name: Prepare GitHub Packages restore access
+        shell: pwsh
+        run: |
+          Copy-Item NuGet.config "$env:RUNNER_TEMP/NuGet.config"
+          dotnet nuget update source openavalon-github --username $env:GITHUB_ACTOR --password $env:GITHUB_TOKEN --store-password-in-clear-text --configfile "$env:RUNNER_TEMP/NuGet.config"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore dependencies
+        shell: pwsh
+        run: |
+          $projects = @(
+            'source/Components/AvalonDock/AvalonDock.LibreWPF.csproj',
+            'source/Components/AvalonDock.Core/AvalonDock.Core.csproj',
+            'source/Components/AvalonDock.Serializer.Xml/AvalonDock.Serializer.Xml.csproj',
+            'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.LibreWPF.csproj',
+            'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.LibreWPF.csproj'
+          )
+          if ('${{ matrix.devflow }}' -eq 'true') {
+            $projects += 'source/TestApp/TestApp.LibreWPF.csproj',
+                         'source/AvalonDockCodeApp/AvalonDockCodeApp.LibreWPF.csproj',
+                         'source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj'
+          }
+          foreach ($project in $projects) {
+            dotnet restore $project --configfile "$env:RUNNER_TEMP/NuGet.config"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $projects = @(
+            'source/Components/AvalonDock/AvalonDock.LibreWPF.csproj',
+            'source/Components/AvalonDock.Core/AvalonDock.Core.csproj',
+            'source/Components/AvalonDock.Serializer.Xml/AvalonDock.Serializer.Xml.csproj',
+            'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.LibreWPF.csproj',
+            'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.LibreWPF.csproj'
+          )
+          # No --warnaserror here (see ci.yml): on the command line it overrides every project in the graph,
+          # including the ones that deliberately opt out with TreatWarningsAsErrors=false. The zero-warnings
+          # policy is unaffected: source/Directory.Build.props sets TreatWarningsAsErrors=true for this repository.
+          foreach ($project in $projects) {
+            dotnet build $project --configuration Release --no-restore
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      # NuGet source mapping already makes GitHub Packages the only candidate for the LibreWPF/ProGPU/
+      # LibreWinForms prefixes (the most specific pattern wins over nuget.org's `*`), but a package
+      # already in the global packages folder is never looked up again - and nuget.org publishes the
+      # same preview versions with different bits. Assert the recorded source instead of assuming it.
+      - name: Verify the LibreWPF closure came from OpenAvalon
+        shell: bash
+        run: |
+          NUGET_PACKAGES="$(cygpath -u "$NUGET_PACKAGES" 2>/dev/null || echo "$NUGET_PACKAGES")"
+          expected='https://nuget.pkg.github.com/lextudio/index.json'
+          status=0
+          for meta in $NUGET_PACKAGES/librewpf.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/librewinforms.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/progpu.*/*/.nupkg.metadata \
+                      $NUGET_PACKAGES/lextudio.devflow.*/*/.nupkg.metadata; do
+            [ -f "$meta" ] || continue
+            # Published on nuget.org on purpose (see NuGet.config).
+            case "$meta" in */progpu.scene.native/*) continue ;; esac
+            if ! grep -q "\"source\": \"${expected}\"" "$meta"; then
+              echo "::error::${meta} came from $(grep -o '"source": "[^"]*"' "$meta" | cut -d'"' -f4) instead of OpenAvalon."
+              status=1
+            fi
+          done
+          exit "$status"
+
+      # Prebuild in Debug so the fixtures can start the apps with --no-build and stay inside their
+      # 120s startup deadline; `dotnet run` defaults to Debug, so the configurations must match.
+      # Both sample apps are built: TestApp carries the docking suites, AvalonDockCodeApp the
+      # ToggleDockingManager ones, and each has its own DevFlow agent and port.
+      - name: Build the sample apps and the DevFlow tests (Debug)
+        if: matrix.devflow
+        run: |
+          dotnet build source/TestApp/TestApp.LibreWPF.csproj --configuration Debug --no-restore
+          dotnet build source/AvalonDockCodeApp/AvalonDockCodeApp.LibreWPF.csproj --configuration Debug --no-restore
+          dotnet build source/DevFlowIntegrationTests/DevFlowIntegrationTests.csproj --configuration Debug --no-restore
+
+      # A RID-less build stages the native runtime assets under runtimes/<rid>/native instead of next
+      # to TestApp.dll, and both Silk (libglfw) and ProGPU's driver (libprogpu_native -> libwgpu_native)
+      # load them by bare name. Put that folder on the loader path and fail here, with the actual
+      # missing library, instead of letting GLFW report that no window platform is available.
+      - name: Expose the Linux native libraries
+        if: runner.os == 'Linux' && matrix.devflow
+        run: |
+          native_dir=source/TestApp/bin/librewpf/Debug/net10.0-windows/runtimes/linux-x64/native
+          if [ ! -d "$native_dir" ]; then
+            echo "::error::$native_dir does not exist; the LibreWPF native staging changed."
+            exit 1
+          fi
+          status=0
+          for lib in "$native_dir"/*.so*; do
+            missing="$(ldd "$lib" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+            if [ -n "$missing" ]; then
+              echo "::error::$(basename "$lib") is missing $missing"
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/$native_dir" >> "$GITHUB_ENV"
+          # Recorded so a wgpu failure in the test step can be read against the actual stack: with
+          # automatic backend selection this says whether lavapipe was even reachable.
+          echo "--- Vulkan ICDs ---"
+          ls -l /usr/share/vulkan/icd.d 2>/dev/null || echo "no ICD directory"
+          echo "--- Vulkan/GL loaders ---"
+          ldconfig -p | grep -E 'libvulkan\.so|libEGL\.so|libGLX\.so|libOSMesa' || true
+
+      - name: Test (DevFlow UI Tests)
+        if: matrix.devflow
+        shell: pwsh
+        working-directory: source/DevFlowIntegrationTests/bin/Debug/net10.0
+        env:
+          DEVFLOW_TESTAPP_NO_BUILD: '1'
+          # Prints ProGPU's [WGPUCONTEXT] trace: which backend the instance got, which adapter was
+          # requested and where surface creation stopped. The TestApp console log is uploaded as an
+          # artifact, so a failure here is diagnosable without another run.
+          PROGPU_BACKEND_DIAGNOSTICS: '1'
+        run: |
+          $exe = if ($IsWindows) { './AvalonDock.DevFlowIntegrationTests.exe' } else { './AvalonDock.DevFlowIntegrationTests' }
+          & $exe --report-ctrf --results-directory "$env:GITHUB_WORKSPACE/TestResults"
+          exit $LASTEXITCODE
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results-${{ matrix.name }}
+          path: |
+            TestResults/**
+            ${{ runner.temp }}/avalondock-devflow-*.log
+            /tmp/avalondock-devflow-*.log
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Pack the OpenDevelop package closure
+        shell: pwsh
+        run: |
+          $projects = @(
+            'source/Components/AvalonDock/AvalonDock.LibreWPF.csproj',
+            'source/Components/AvalonDock.Core/AvalonDock.Core.csproj',
+            'source/Components/AvalonDock.Serializer.Xml/AvalonDock.Serializer.Xml.csproj',
+            'source/Components/AvalonDock.Themes.VS2013/AvalonDock.Themes.VS2013.LibreWPF.csproj',
+            'source/Components/AvalonDock.Themes.VS/AvalonDock.Themes.VS.LibreWPF.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet pack $project --configuration Release --no-build --no-restore -o nupkg
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          [xml]$props = Get-Content source/Directory.Build.props
+          # Directory.Build.props has several PropertyGroup elements; member enumeration over all of them
+          # would also return an empty entry for the groups without VersionPrefix.
+          $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
+          $expected = @(
+            "Dirkster.AvalonDock.Core.$version.nupkg",
+            "Dirkster.AvalonDock.LibreWPF.$version.nupkg",
+            "Dirkster.AvalonDock.Serializer.Xml.$version.nupkg",
+            "Dirkster.AvalonDock.Themes.VS.LibreWPF.$version.nupkg",
+            "Dirkster.AvalonDock.Themes.VS2013.LibreWPF.$version.nupkg"
+          )
+          $actual = @(Get-ChildItem nupkg/*.nupkg | ForEach-Object Name)
+          if (Compare-Object $expected $actual) { throw "Unexpected package closure: $($actual -join ', ')." }
+
+      # The packages are packed on the macOS job; every leg builds the same LibreWPF projects.
+      - name: Upload NuGet packages
+        if: matrix.name == 'macos-arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: nupkg/*.nupkg
+          retention-days: 30
+  publish:
+    name: Publish GitHub Packages
+    needs: validate
+    # Two ways in: pushing a v* tag (also creates the GitHub Release), or running this workflow by hand
+    # with the `publish` input on the opendevelop branch (packages only).
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/librewpf-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/opendevelop')
+    runs-on: windows-2025
+    steps:
+      # global.json pins an SDK, and `dotnet nuget push` resolves it before running.
+      - name: Setup .NET 11 preview SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-packages
+          path: nupkg
+      - name: Determine whether this is the latest release
+        id: version
+        if: startsWith(github.ref, 'refs/tags/librewpf-v')
+        shell: bash
+        run: |
+          version="${GITHUB_REF#refs/tags/librewpf-v}"
+          highest=$(git tag -l 'librewpf-v*' | sed 's#^librewpf-v##' | sort -V | tail -1)
+          newest=$(printf '%s\n%s\n' "$highest" "$version" | sort -V | tail -1)
+          if [ "$newest" = "$version" ]; then echo 'MAKE_LATEST=true' >> "$GITHUB_OUTPUT"; else echo 'MAKE_LATEST=false' >> "$GITHUB_OUTPUT"; fi
+      - name: Verify package versions
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/librewpf-v*') {
+            # A release tag names the version.
+            $version = "$env:GITHUB_REF_NAME".Substring('librewpf-v'.Length)
+          } else {
+            # A manual publish has no tag: the version is the repository's own.
+            [xml]$props = Get-Content source/Directory.Build.props
+            $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($package in Get-ChildItem nupkg/*.nupkg) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+            try {
+              $entry = @($archive.Entries | Where-Object Name -like '*.nuspec')
+              if ($entry.Count -ne 1) { throw "$($package.Name) does not contain exactly one nuspec." }
+              [xml]$nuspec = [System.IO.StreamReader]::new($entry.Open()).ReadToEnd()
+              if ($nuspec.package.metadata.version -ne $version) { throw "$($package.Name) has version $($nuspec.package.metadata.version), not $version." }
+            } finally { $archive.Dispose() }
+          }
+      # GitHub Packages versions are immutable and --skip-duplicate keeps the first upload, so a
+      # republish at the same version would silently ship the old bits. Delete exactly the five package
+      # IDs this run produced at exactly the target version, then push. Everything is validated before
+      # the first delete, so the only failure mode left is an upload error after a successful delete;
+      # re-running this workflow restores the closure.
+      - name: Delete same-version packages
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/librewpf-v*') {
+            $version = "$env:GITHUB_REF_NAME".Substring('librewpf-v'.Length)
+          } else {
+            [xml]$props = Get-Content source/Directory.Build.props
+            $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($package in Get-ChildItem nupkg/*.nupkg) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+            try {
+              $entry = @($archive.Entries | Where-Object Name -like '*.nuspec')[0]
+              [xml]$nuspec = [System.IO.StreamReader]::new($entry.Open()).ReadToEnd()
+              $id = $nuspec.package.metadata.id
+            } finally { $archive.Dispose() }
+            $ids = gh api --paginate "/orgs/lextudio/packages/nuget/$id/versions?per_page=100" --jq ".[] | select(.name == `"$version`") | .id" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              # A package that has never been published has no versions to replace.
+              if ("$ids" -match 'HTTP 404') { Write-Host "$id has no published versions yet."; continue }
+              throw "Could not list the published versions of $id.`: $ids"
+            }
+            foreach ($versionId in @($ids | Where-Object { "$_".Trim() -match '^\d+$' })) {
+              Write-Host "Deleting $id $version (version id $versionId)"
+              gh api --method DELETE "/orgs/lextudio/packages/nuget/$id/versions/$versionId"
+              if ($LASTEXITCODE -ne 0) { throw "Could not delete $id $version." }
+            }
+          }
+      - name: Push public packages
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $packages = @(Get-ChildItem nupkg -Filter '*.nupkg' -File -ErrorAction Stop)
+          if ($packages.Count -ne 5) { throw "Expected five validated AvalonDock packages, found $($packages.Count)." }
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName --api-key $env:GITHUB_TOKEN --source https://nuget.pkg.github.com/lextudio/index.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Verify the published versions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/librewpf-v*') {
+            $version = "$env:GITHUB_REF_NAME".Substring('librewpf-v'.Length)
+          } else {
+            [xml]$props = Get-Content source/Directory.Build.props
+            $version = $props.SelectSingleNode('//VersionPrefix').InnerText.Trim()
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($package in Get-ChildItem nupkg/*.nupkg) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+            try {
+              $entry = @($archive.Entries | Where-Object Name -like '*.nuspec')[0]
+              [xml]$nuspec = [System.IO.StreamReader]::new($entry.Open()).ReadToEnd()
+              $id = $nuspec.package.metadata.id
+            } finally { $archive.Dispose() }
+            $published = gh api --paginate "/orgs/lextudio/packages/nuget/$id/versions?per_page=100" --jq ".[] | select(.name == `"$version`") | .id"
+            if ($LASTEXITCODE -ne 0 -or -not $published) { throw "$id $version is not on the feed after publishing." }
+          }
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/librewpf-v')
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          make_latest: ${{ steps.version.outputs.MAKE_LATEST }}
+          files: nupkg/*.nupkg
