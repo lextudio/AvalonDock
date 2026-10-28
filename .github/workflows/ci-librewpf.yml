@@ -284,10 +284,11 @@ jobs:
       # - windows-11-arm logs in to the Windows first-logon privacy page ("Choose privacy settings
       #   for your device"), a full-screen window above everything, so each real click landed on it
       #   and WPF saw no mouse input at all.
-      # - "Show window contents while dragging" is off. The Win32 modal move loop then still sends
-      #   WM_MOVING (drop targets track the pointer) but moves the window only on release, so a
-      #   floating window never follows a caption drag. A normal desktop has it on.
-      # The agent's console window is minimised too; a screenshot of the result is uploaded.
+      # - The agent's console window sits over the left of the desktop on both images; with it
+      #   minimised the last windows-x64 failure (a floating window not following a caption drag)
+      #   went away.
+      # Full-window dragging is also asserted on (the images already have it), since without it the
+      # Win32 move loop moves a window only on release. Screenshots before/after are uploaded.
       - name: Prepare the Windows desktop
         if: runner.os == 'Windows'
         shell: pwsh
@@ -344,8 +345,17 @@ jobs:
           foreach ($name in 'WWAHost', 'CloudExperienceHostBroker', 'UserOOBEBroker', 'OOBENetworkConnectionFlow', 'msoobe') {
             Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object { "stopping $($_.ProcessName) ($($_.Id))"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
           }
+          # Closing the first-logon page drops the session onto an open Start menu over the middle of
+          # the screen (it opened a few seconds later and was not in the window list). It is a shell
+          # surface that cannot be minimised; Esc closes it and is harmless when nothing is open.
+          Add-Type -AssemblyName System.Windows.Forms
+          for ($i = 0; $i -lt 3; $i++) {
+            Start-Sleep -Seconds 2
+            Get-TopWindows | Where-Object { $_.Process -in 'StartMenuExperienceHost', 'SearchHost', 'ShellExperienceHost' } |
+              ForEach-Object { "shell surface $($_.Process) '$($_.Title)' $($_.Rect)" }
+            [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+          }
           # Whatever is still visible and is not the shell gets minimised (SW_MINIMIZE).
-          Start-Sleep -Seconds 2
           Get-TopWindows | Where-Object { $_.Process -ne 'explorer' -and $_.Class -notin 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW' } |
             ForEach-Object { "minimising $($_.Process) '$($_.Title)' [$($_.Class)]"; [void][Native.Desk]::ShowWindow($_.Handle, 6) }
 
