@@ -93,7 +93,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				// (not just that our poll raced) is safe against re-issuing a drag from wrong/stale
 				// coordinates.
 				DockLayoutSnapshot floated = null;
-						const int maxAttempts = 3;
+						const int maxAttempts = 2;
 						for (var attempt = 1; attempt <= maxAttempts && floated == null; attempt++)
 						{
 							await client.InvokeAsync("avd.input.reset");
@@ -641,7 +641,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			double actualX = double.NaN;
 			double actualY = double.NaN;
-			for (var attempt = 0; attempt < 5; attempt++)
+			for (var attempt = 0; attempt < 2; attempt++)
 			{
 				await RunCliclickMoveAsync(screenX, screenY, ct, client).ConfigureAwait(false);
 				await Task.Delay(200, ct).ConfigureAwait(false);

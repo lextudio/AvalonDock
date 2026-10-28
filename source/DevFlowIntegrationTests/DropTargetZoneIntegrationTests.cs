@@ -99,7 +99,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				// way DragDockedAnchorableTitle_ToFreeSpace_FloatsToolWindow does, so a transient miss
 				// does not fail the test. Genuine invariant violations (e.g. the overlay covering the
 				// menu bar) still throw immediately and are never retried.
-				const int maxAttempts = 5;
+				const int maxAttempts = 2;
 				string lastFailure = null;
 				var docked = false;
 				for (var attempt = 1; attempt <= maxAttempts && !docked; attempt++)
@@ -477,7 +477,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 						? await client.QueryBoundsAsync("anchorable-pane", "dragTestTool2")
 						: await client.QueryBoundsAsync("document-pane");
 
-				const int maxAttempts = 5;
+				const int maxAttempts = 2;
 				string lastFailure = null;
 				var docked = false;
 				ElementBounds? preview = null;

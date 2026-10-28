@@ -286,6 +286,29 @@ jobs:
           Add-Type -Namespace Native -Name Dpi -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetDpiForSystem(); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);'
           "system DPI = $([Native.Dpi]::GetDpiForSystem()) (96 = 100%), primary screen as this process sees it = $([Native.Dpi]::GetSystemMetrics(0)) x $([Native.Dpi]::GetSystemMetrics(1)), arch = $env:PROCESSOR_ARCHITECTURE"
           Get-CimInstance Win32_VideoController | Select-Object Name, CurrentHorizontalResolution, CurrentVerticalResolution | Format-Table | Out-String
+          # Can this session move the pointer at all? Native-input cases fail on windows-arm64 with WPF
+          # seeing no mouse input whatsoever, so check the desktop session before blaming the tool.
+          Add-Type -Namespace Native -Name Input -MemberDefinition @'
+          [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool SetCursorPos(int x, int y);
+          [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] public static extern bool GetCursorPos(out POINT p);
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+          [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+          '@
+          "session id = $((Get-Process -Id $PID).SessionId), user interactive = $([Environment]::UserInteractive), input desktop = $([Native.Input]::OpenInputDesktop(0, $false, 0x100)), foreground = $([Native.Input]::GetForegroundWindow())"
+          $ok = [Native.Input]::SetCursorPos(300, 200); $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+          $p = New-Object Native.Input+POINT; [void][Native.Input]::GetCursorPos([ref]$p)
+          "SetCursorPos(300,200) ok=$ok error=$err -> GetCursorPos=$($p.X),$($p.Y)"
+          query user 2>&1 | Out-String
+          # A window the image leaves on screen (first-logon or setup UI) would take every real click
+          # while SendInput still reports success, so list what is visible and keep a screenshot.
+          Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object Id, ProcessName, MainWindowTitle | Format-Table -AutoSize | Out-String -Width 200
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE/TestResults" | Out-Null
+          $bmp.Save("$env:GITHUB_WORKSPACE/TestResults/desktop-before-tests.png")
 
       - name: Test (DevFlow UI Tests)
         shell: pwsh
@@ -333,6 +356,12 @@ jobs:
               Get-ChildItem -Path $dir -Filter 'avalondock-devflow-*.log' -ErrorAction SilentlyContinue |
                 Copy-Item -Destination "$env:GITHUB_WORKSPACE/TestResults"
             }
+          }
+          # CliclickSharp's own record of every SendInput: result, last error and where the cursor ended.
+          $cliclickLog = Join-Path ([IO.Path]::GetTempPath()) 'cliclick-sharp-windows.log'
+          if (Test-Path $cliclickLog) {
+            Copy-Item $cliclickLog "$env:GITHUB_WORKSPACE/TestResults"
+            Get-Content $cliclickLog -Tail 40
           }
 
       - name: Upload test results
