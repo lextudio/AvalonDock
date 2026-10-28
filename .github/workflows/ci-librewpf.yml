@@ -375,6 +375,22 @@ jobs:
           # command and its window, and records what started it; the runner cleans it up with the job.
           # Other wsl.exe processes are left alone: the x64 image's provisioning agent probes WSL with
           # a windowless `wsl -u root -e ls`.
+          # The retries come from the update never finishing: --prompt-before-exit leaves it waiting for
+          # a key, and stopping it counts as a failed update. Finish the update here, before the tests,
+          # so the background task has nothing left to do; the watchdog stays as the safety net and its
+          # log shows whether it still had to step in.
+          if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $update = Start-Process wsl.exe -ArgumentList '--update', '--web-download' -WindowStyle Hidden -PassThru
+            if ($update.WaitForExit(300000)) {
+              "wsl --update finished with exit code $($update.ExitCode) after $([int]$sw.Elapsed.TotalSeconds) s"
+            } else {
+              "wsl --update did not finish within 300 s; stopping it"
+              Stop-Process -Id $update.Id -Force -ErrorAction SilentlyContinue
+            }
+            wsl.exe --version 2>&1 | Out-String
+          }
+
           $watchdog = Join-Path $env:RUNNER_TEMP 'desktop-watchdog.ps1'
           $watchdogLog = Join-Path $env:RUNNER_TEMP 'desktop-watchdog.log'
           Set-Content -Path $watchdog -Value @'
