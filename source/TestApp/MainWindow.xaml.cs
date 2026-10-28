@@ -150,7 +150,15 @@ namespace TestApp
 
 			this.DataContext = this;
 
-			if (OperatingSystem.IsWindows())
+#if LIBREWPF
+			// LibreWPF on Windows runs LibreWinForms, whose controls carry synthetic handles; HwndHost's
+			// native Windows path rejects those (IsWindow fails on the adapter's 0x8000000000000001).
+			// Tracked in docs/librewpf.md (section 11.9); the pane stays, without the interop content.
+			const bool hostsWinForms = false;
+#else
+			var hostsWinForms = OperatingSystem.IsWindows();
+#endif
+			if (hostsWinForms)
 			{
 				winFormsHost.Child = new UserControl1();
 			}
