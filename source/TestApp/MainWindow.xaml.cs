@@ -151,10 +151,11 @@ namespace TestApp
 			this.DataContext = this;
 
 #if LIBREWPF
-			// LibreWPF on Windows runs LibreWinForms, whose controls carry synthetic handles; HwndHost's
-			// native Windows path rejects those (IsWindow fails on the adapter's 0x8000000000000001).
-			// Tracked in docs/librewpf.md (section 11.9); the pane stays, without the interop content.
-			const bool hostsWinForms = false;
+			// LibreWinForms controls carry logical handles, so a LibreWPF build that predates the visual
+			// WindowsFormsHost (docs/librewpf.md, 2026-10-28) cannot host them on any OS and the pane stays
+			// without the interop content. DEVFLOW_HOST_WINFORMS=1 turns the content on for a LibreWPF
+			// package that has the visual host, so it can be tried in CI before it becomes the default.
+			var hostsWinForms = Environment.GetEnvironmentVariable("DEVFLOW_HOST_WINFORMS") == "1";
 #else
 			var hostsWinForms = OperatingSystem.IsWindows();
 #endif

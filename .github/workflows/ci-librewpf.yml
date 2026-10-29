@@ -31,6 +31,10 @@ on:
         description: 'Run the cases skipped as known LibreWPF gaps (sets DEVFLOW_RUN_KNOWN_GAPS=1)'
         type: boolean
         default: false
+      host_winforms:
+        description: 'Host the WinForms control in TestApp (sets DEVFLOW_HOST_WINFORMS=1); needs a LibreWPF package with the visual WindowsFormsHost'
+        type: boolean
+        default: false
 
 # A newer push supersedes a run that is still going; manual runs are never cancelled by it.
 concurrency:
@@ -430,6 +434,7 @@ jobs:
           DEVFLOW_TESTAPP_NO_BUILD: '1'
           TEST_ARGS: ${{ inputs.test_args }}
           DEVFLOW_RUN_KNOWN_GAPS: ${{ inputs.run_known_gaps && '1' || '' }}
+          DEVFLOW_HOST_WINFORMS: ${{ inputs.host_winforms && '1' || '' }}
           # LibreWPF's own GPU hit-test trace (owners found at each hit point), for gap investigations.
           PROGPU_WPF_TRACE_HIT_TEST: ${{ inputs.run_known_gaps && '1' || '' }}
           # ProGPU renders through wgpu over GLFW, so the windowing environment has to look like a
