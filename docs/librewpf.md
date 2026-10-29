@@ -988,7 +988,10 @@ Becomes simpler, with one honest caveat.
        Terminal window that takes the foreground during the tests, and the agent's console window
        covers part of the desktop on both images. `ci-librewpf.yml` now prepares the desktop (stops the
        first-logon host, dismisses the Start menu, minimises other windows, runs a watchdog that stops
-       that `wsl.exe --update` and logs what started it) and uploads screenshots;
+       that `wsl.exe --update` and logs what started it) and uploads screenshots. The update retried every
+       30 s only because it never finished (`--prompt-before-exit` waits for a key, and stopping it counts
+       as a failure), so on arm64 the step first runs `wsl --update --web-download` to completion (about
+       30 s); after that the watchdog had nothing to stop;
        Both Windows legs pass 118/118 and gate the run like the others.
        `release-librewpf.yml` runs no tests at all: it packs once on macOS and requires a green CI
        (LibreWPF) push run for the commit.
