@@ -1030,6 +1030,21 @@ Becomes simpler, with one honest caveat.
   presentation source being a native `HwndSource`, the portable-host switch) were measurements of
   AvalonDock's side that turned out not to be the failing host; the "treat Windows as portable" attempt stays
   reverted. Verification: the next Windows legs after the LibreWPF package publish.
+- 2026-10-28 (**correction: the WindowsFormsHost entry above was wrong**): `083e157ee` did not fix anything and
+  was reverted (`d81e86281`): on the Windows lane the adapter handle is not zero but a LibreWinForms logical
+  handle (`0x8000000000000001`, `ManagedLibreHandleRegistry`: `long.MinValue | sequence`). Reading the code
+  shows `WindowsFormsHost` with LibreWinForms is not a Windows-only bug but an unimplemented feature on every
+  OS: LibreWinForms builds with `LIBREWINFORMS_PORTABLE` everywhere, and `NativeWindow.CreateHandle` creates a
+  real window only for a `Form` or a top-level drop-down; every other control (the `WinFormsAdapter` container
+  included) gets a logical handle. The only thing that turns a handle into a WPF child is
+  `HwndSource.TryInitializePortableChild`, which nothing in WinFormsIntegration calls, so
+  `HwndHost.AttachPortableChildVisual` has no child source to take on macOS/Linux either (static reading; not
+  run there, because TestApp has never hosted the WinForms pane under LIBREWPF). On Windows it is rejected
+  earlier by the native `IsWindow` check. The separate `LibreWPF.WinFormsCompat` host paints and forwards
+  input itself, but the SDK uses it only when LibreWinForms is off. A real fix is a feature in LibreWPF:
+  visual hosting for a logical-handle child under a native `HwndSource` (HwndHost), plus painting the
+  LibreWinForms control tree into the host's `DrawingContext`, mouse/key forwarding, layout from
+  Measure/Arrange and focus. Until then TestApp skips the WinForms pane under LIBREWPF.
 - 2026-10-27 (end of day): CI of `9000c9f`: the WPF line (`ci.yml`) is green; the LibreWPF line is green on
   linux-x64 and linux-arm64, the Windows legs fail as described above (now `continue-on-error`), the macOS leg
   was cancelled by a later push and has no result yet. DevFlow is pinned to `0.3.1` again, served from
