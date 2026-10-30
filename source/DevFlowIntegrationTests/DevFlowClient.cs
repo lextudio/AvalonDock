@@ -109,14 +109,28 @@ namespace AvalonDock.DevFlowIntegrationTests
 				if (watch.ElapsedMilliseconds > 1000)
 					Console.Error.WriteLine($"[devflow-slow] {action} took {watch.ElapsedMilliseconds} ms");
 				if (!resp.IsSuccessStatusCode)
+				{
+					await CaptureFailureAsync($"action '{action}' returned {(int)resp.StatusCode}").ConfigureAwait(false);
 					throw new HttpRequestException(
 						$"DevFlow action '{action}' returned {(int)resp.StatusCode}: {raw}");
+				}
 				return ExtractResult(raw);
 			}
 			catch (TaskCanceledException ex)
 			{
+				await CaptureFailureAsync($"action '{action}' timed out").ConfigureAwait(false);
 				throw new TimeoutException($"DevFlow action '{action}' did not complete within {_http.Timeout}.", ex);
 			}
+		}
+
+		/// <summary>
+		/// Keeps the screen and the app state when a call to the agent fails. The capture issues calls of
+		/// its own, so it is guarded by the capture helper rather than by anything here.
+		/// </summary>
+		private Task CaptureFailureAsync(string reason)
+		{
+			Console.Error.WriteLine($"[devflow] {reason}");
+			return FailureArtifacts.CaptureAsync(this, FailureArtifacts.CurrentCaseName);
 		}
 
 		/// <summary>

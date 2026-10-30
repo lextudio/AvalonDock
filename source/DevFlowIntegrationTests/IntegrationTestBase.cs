@@ -38,11 +38,20 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			var client = CreateClient();
 			if (await client.IsReachableAsync())
+			{
+				// Failures captured from the shared plumbing (a failed agent call, a state that never
+				// arrived) name their files after the case that is running and talk to this agent.
+				FailureArtifacts.ActiveClient = client;
 				return client;
+			}
 
 			client.Dispose();
 			throw new InvalidOperationException($"DevFlow agent not reachable on port {AgentPort}.");
 		}
+
+		/// <summary>Runs one case and captures the screen and the app state if it fails.</summary>
+		protected static Task RunWithFailureArtifactsAsync(DevFlowClient client, string caseName, Func<Task> body)
+			=> FailureArtifacts.RunAsync(client, caseName, body);
 
 		protected Task IsolateDesktopForNativeInputAsync()
 		{

@@ -174,6 +174,10 @@ namespace AvalonDock.DevFlowIntegrationTests
 				catch (Exception ex) { state = $" (state unavailable: {ex.Message})"; }
 			}
 
+			// A state that never arrived is the failure this suite reports most often, and the app is
+			// still running: keep the screen and its own reports before giving up on it.
+			await FailureArtifacts.CaptureAsync(FailureArtifacts.ActiveClient, FailureArtifacts.CurrentCaseName);
+
 			throw new Xunit.Sdk.XunitException(
 				(last == null ? message : $"{message} (last error: {last.Message})") + state);
 		}
