@@ -110,7 +110,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 					Console.Error.WriteLine($"[devflow-slow] {action} took {watch.ElapsedMilliseconds} ms");
 				if (!resp.IsSuccessStatusCode)
 				{
-					await CaptureFailureAsync($"action '{action}' returned {(int)resp.StatusCode}").ConfigureAwait(false);
+					// A lease rejection and an unimplemented primitive are control flow the suites handle
+					// (retry and skip); a capture for each of them would turn a normal run into a slow one.
+					if (resp.StatusCode is not (HttpStatusCode.Conflict or HttpStatusCode.NotImplemented))
+					{
+						await CaptureFailureAsync($"action '{action}' returned {(int)resp.StatusCode}").ConfigureAwait(false);
+					}
+
 					throw new HttpRequestException(
 						$"DevFlow action '{action}' returned {(int)resp.StatusCode}: {raw}");
 				}

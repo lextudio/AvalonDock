@@ -142,6 +142,14 @@ namespace AvalonDock.DevFlowIntegrationTests
 		}
 
 		/// <summary>
+		/// Whether this host can be asked for a screenshot without a permission prompt: a macOS CI runner
+		/// cannot, and asking blocks there.
+		/// </summary>
+		private static bool CanCaptureScreen =>
+			!(OperatingSystem.IsMacOS() &&
+				string.Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true", StringComparison.Ordinal));
+
+		/// <summary>
 		/// Saves the whole screen with the platform's own tool. A tool that is missing, or a capture that
 		/// fails, is reported on stderr; the state files are still there.
 		/// </summary>
@@ -149,6 +157,15 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			try
 			{
+				if (!CanCaptureScreen)
+				{
+					// macOS asks for Screen Recording permission on first use and the capture then waits for
+					// an answer nobody can give on a runner, which is how a failing case turns into a hung
+					// job (the state files above are still written).
+					Console.Error.WriteLine("[failures] screen capture skipped on this host");
+					return;
+				}
+
 				System.IO.Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
 				if (OperatingSystem.IsMacOS())
 				{
@@ -202,6 +219,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 			if (!process.WaitForExit(30_000))
 			{
 				process.Kill();
+				process.WaitForExit(5_000);
 				throw new TimeoutException($"'{fileName}' did not finish in 30 seconds.");
 			}
 
