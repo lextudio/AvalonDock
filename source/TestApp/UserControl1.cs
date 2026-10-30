@@ -25,5 +25,13 @@ namespace TestApp
 		{
 
 		}
+
+		// An Alt+letter mnemonic on this button (its text starts with "&M") runs this handler through
+		// ProcessMnemonic. It writes a marker the interop cases read back from label2, because "the button
+		// fired" is not observable any other way from outside the hosted control tree.
+		private void mnemonicButton_Click(object sender, EventArgs e)
+		{
+			label2.Text = "mnemonic: clicked";
+		}
 	}
 }

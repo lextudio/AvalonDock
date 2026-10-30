@@ -151,11 +151,12 @@ namespace TestApp
 			this.DataContext = this;
 
 #if LIBREWPF
-			// LibreWinForms controls carry logical handles, so a LibreWPF build that predates the visual
-			// WindowsFormsHost (docs/librewpf.md, 2026-10-28) cannot host them on any OS and the pane stays
-			// without the interop content. DEVFLOW_HOST_WINFORMS=1 turns the content on for a LibreWPF
-			// package that has the visual host, so it can be tried in CI before it becomes the default.
-			var hostsWinForms = Environment.GetEnvironmentVariable("DEVFLOW_HOST_WINFORMS") == "1";
+			// LibreWinForms controls carry logical handles, so the interop pane needs LibreWPF's visual
+			// WindowsFormsHost: the host paints the control tree itself and forwards pointer, keyboard,
+			// text and focus, because there is no child HWND to parent. That shipped with LibreWPF
+			// 0.1.0-preview.69 on 2026-10-29 (docs/librewpf.md, section 11), so the pane is hosted by
+			// default; DEVFLOW_HOST_WINFORMS=0 restores the placeholder, for a package that predates it.
+			var hostsWinForms = Environment.GetEnvironmentVariable("DEVFLOW_HOST_WINFORMS") != "0";
 #else
 			var hostsWinForms = OperatingSystem.IsWindows();
 #endif
@@ -165,11 +166,9 @@ namespace TestApp
 			}
 			else
 			{
-				// WindowsFormsHost is an HwndHost: it hosts the WinForms control in a native child
-				// window, and a portable backend (LibreWPF) has none to give it - asking for one aborts
-				// the process with "BuildWindowCore failed to return the hosted child window handle".
-				// The pane stays so window/docking scenarios keep their layout, but the interop content
-				// is replaced with a note instead of a host that cannot work here.
+				// The opt-out path, and every platform whose build has no WinForms integration: the pane
+				// keeps its place in the layout (window and docking scenarios need it there) but shows a
+				// note instead of a host that cannot draw or forward input.
 				WinFormsWindow.Content = new TextBlock
 				{
 					Text = "Windows Forms interop is only available on Windows.",
@@ -1788,16 +1787,40 @@ namespace TestApp
 				.FirstOrDefault(c => string.Equals(c.ContentId, contentId, StringComparison.Ordinal))
 				?? throw new InvalidOperationException($"No content '{contentId}'.");
 
-			ILayoutContainer parent = content.Parent;
-			while (parent != null && parent is not LayoutAnchorablePaneGroup)
-				parent = (parent as ILayoutElement)?.Parent;
-			if (parent is not LayoutAnchorablePaneGroup group)
+			// A dock width belongs to the container the layout panel gives a size to: the pane group when
+			// the sample wraps the pane in one (Tool Window 1/2 - a pane inside a group is forced to "*",
+			// so only the group has a width), otherwise the pane itself (the interop pane, which the sample
+			// declares directly under the panel). The group wins when both are on the path.
+			LayoutAnchorablePaneGroup group = null;
+			LayoutAnchorablePane pane = null;
+			for (ILayoutContainer parent = content.Parent; parent != null; parent = parent.Parent)
+			{
+				if (parent is LayoutAnchorablePaneGroup foundGroup)
+				{
+					group = foundGroup;
+					break;
+				}
+
+				pane ??= parent as LayoutAnchorablePane;
+			}
+
+			if (group == null && pane == null)
 				return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["changed"] = false });
 
-			group.DockWidth = new GridLength(width);
+			if (group != null)
+				group.DockWidth = new GridLength(width);
+			else
+				pane.DockWidth = new GridLength(width);
+
 			dockManager.UpdateLayout();
 			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
-			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["changed"] = true, ["dockWidth"] = group.DockWidth.Value });
+			double dockWidth = group != null ? group.DockWidth.Value : pane.DockWidth.Value;
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["changed"] = true,
+				["host"] = group != null ? "pane-group" : "pane",
+				["dockWidth"] = dockWidth,
+			});
 		}
 
 		public string CloseMenus()
@@ -2184,6 +2207,312 @@ namespace TestApp
 				.Where(x => string.Equals((x.Model as LayoutAnchorable)?.ContentId, contentId, StringComparison.Ordinal))
 				.FirstOrDefault(x => x.IsVisible && x.ActualWidth > 0 && x.ActualHeight > 0);
 
+		/// <summary>
+		/// Reports the WinForms control tree the interop pane hosts: text, tab index, focus and geometry in
+		/// WinForms pixels, plus the host's pixels-per-WPF-unit factor. The pane's content is a separate UI
+		/// framework, so nothing else in this agent can say what it contains or which of its controls has
+		/// focus - which is what the interop cases need to assert.
+		/// </summary>
+		public string QueryWinFormsTree()
+		{
+			System.Windows.Forms.Control root = winFormsHost.Child;
+			var controls = new List<Dictionary<string, object>>();
+			if (root != null)
+				CollectWinFormsControls(root, root, controls);
+
+			var (pixelsPerUnitX, pixelsPerUnitY) = WinFormsPixelsPerUnit();
+			System.Windows.Forms.Control container = root?.Parent;
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["hosted"] = root != null,
+				["hostType"] = winFormsHost.GetType().Name,
+				// Which host this build has: LibreWPF's visual host, which paints the hosted tree and
+				// converts pointer, keyboard and text input itself, or real WPF's native HwndHost, which
+				// gives the tree a child window. It follows the assembly, not the OS or anything observed
+				// at run time, and the cases that drive keyboard, text and a layout transform only mean
+				// something for the former - so they skip on this flag rather than on the OS, because the
+				// LibreWPF line runs on Windows too.
+				["visualHost"] = WinFormsHostIsVisual(),
+				["hostHasWpfFocus"] = winFormsHost.IsKeyboardFocusWithin,
+				["pixelsPerUnitX"] = pixelsPerUnitX,
+				["pixelsPerUnitY"] = pixelsPerUnitY,
+				// The control that has focus inside the hosted tree, found the way the host finds it: each
+				// container tracks its own active control, so the chain is walked from the host's container
+				// down. It is reported instead of Control.Focused, which also requires the WPF window to be
+				// the active window.
+				["activeControl"] = ActiveWinFormsControl(container)?.Name,
+				["hostWidthInDip"] = winFormsHost.ActualWidth,
+				["hostHeightInDip"] = winFormsHost.ActualHeight,
+				["containerWidth"] = container?.Width ?? 0,
+				["containerHeight"] = container?.Height ?? 0,
+				["rootWidth"] = root?.Width ?? 0,
+				["rootHeight"] = root?.Height ?? 0,
+				["controls"] = controls,
+			});
+		}
+
+		/// <summary>
+		/// The screen rectangle of one hosted WinForms control, in the same coordinate space the agent's
+		/// clicks use, so a click aimed at its centre lands on that control. The rectangle is produced by
+		/// mapping the control's WinForms pixel bounds through the host: pixels to WPF units with the
+		/// host's own factor, units to screen with <c>PointToScreen</c>. A layout transform changes both
+		/// steps, which is why the two corners are mapped rather than a size scaled.
+		/// </summary>
+		public string QueryWinFormsBounds(string name)
+		{
+			System.Windows.Forms.Control root = winFormsHost.Child;
+			System.Windows.Forms.Control control = root == null ? null : FindWinFormsControl(root, name);
+			if (control == null)
+			{
+				return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+				{
+					["found"] = false,
+					["name"] = name,
+				});
+			}
+
+			var (pixelsPerUnitX, pixelsPerUnitY) = WinFormsPixelsPerUnit();
+			System.Drawing.Point offset = WinFormsOffsetFrom(root, control);
+			var payload = new Dictionary<string, object>
+			{
+				["found"] = true,
+				["name"] = name,
+				["type"] = control.GetType().Name,
+				["pixelsPerUnitX"] = pixelsPerUnitX,
+				["pixelsPerUnitY"] = pixelsPerUnitY,
+			};
+
+			if (pixelsPerUnitX <= 0 || pixelsPerUnitY <= 0)
+			{
+				payload["hitTestPoint"] = false;
+				return System.Text.Json.JsonSerializer.Serialize(payload);
+			}
+
+			// WinForms pixels per WPF unit of the host's own layout, and PointToScreen maps those units into
+			// whatever space the backend puts screen coordinates in - the same space the agent's clicks use
+			// (logical units for a portable LibreWPF window, device pixels for a native HwndSource, which
+			// includes LibreWPF on Windows; see docs/librewpf.md, 11.10). Both are used as they are:
+			// converting the result to some other space would move it away from where the click lands. A
+			// layout transform changes both factors at once (the host is arranged smaller and drawn bigger),
+			// which is why the rectangle is computed by mapping its two corners rather than by scaling a
+			// size.
+			Point hostOrigin = winFormsHost.PointToScreen(new Point(0, 0));
+			Point hostCorner = winFormsHost.PointToScreen(new Point(winFormsHost.ActualWidth, winFormsHost.ActualHeight));
+
+			Point topLeft = winFormsHost.PointToScreen(new Point(offset.X / pixelsPerUnitX, offset.Y / pixelsPerUnitY));
+			Point bottomRight = winFormsHost.PointToScreen(new Point(
+				(offset.X + control.Width) / pixelsPerUnitX,
+				(offset.Y + control.Height) / pixelsPerUnitY));
+
+			double width = bottomRight.X - topLeft.X;
+			double height = bottomRight.Y - topLeft.Y;
+			double centerX = topLeft.X + width / 2d;
+			double centerY = topLeft.Y + height / 2d;
+
+			payload["hostOriginX"] = hostOrigin.X;
+			payload["hostOriginY"] = hostOrigin.Y;
+			payload["x"] = topLeft.X;
+			payload["y"] = topLeft.Y;
+			payload["width"] = width;
+			payload["height"] = height;
+			payload["centerX"] = centerX;
+			payload["centerY"] = centerY;
+			// A click can only land on the control while the centre is inside the host: the pane is
+			// narrow, so a wide control is clipped and its centre may be outside the visible area.
+			payload["hitTestPoint"] = centerX >= hostOrigin.X
+				&& centerX <= hostCorner.X
+				&& centerY >= hostOrigin.Y
+				&& centerY <= hostCorner.Y;
+
+			return System.Text.Json.JsonSerializer.Serialize(payload);
+		}
+
+		/// <summary>
+		/// Scales the interop host with a layout transform, which is the same factor the drawing and the
+		/// pointer conversion go through (the host multiplies it by the DPI scale). The interop cases use
+		/// it to check that a click aimed from the reported geometry lands on the control whose rectangle
+		/// it was computed from.
+		/// </summary>
+		public string SetWinFormsScale(double scaleX, double scaleY)
+		{
+			if (scaleX <= 0 || scaleY <= 0)
+				throw new ArgumentOutOfRangeException(
+					scaleX <= 0 ? nameof(scaleX) : nameof(scaleY),
+					$"The scale has to be positive, not {scaleX} by {scaleY}.");
+
+			winFormsHost.LayoutTransform = scaleX == 1 && scaleY == 1
+				? Transform.Identity
+				: new ScaleTransform(scaleX, scaleY);
+			UpdateLayout();
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+			var (pixelsPerUnitX, pixelsPerUnitY) = WinFormsPixelsPerUnit();
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["scaleX"] = scaleX,
+				["scaleY"] = scaleY,
+				["pixelsPerUnitX"] = pixelsPerUnitX,
+				["pixelsPerUnitY"] = pixelsPerUnitY,
+			});
+		}
+
+		/// <summary>
+		/// Whether the interop host of this build paints the hosted control tree itself instead of giving
+		/// it a native child window. LibreWPF's host does (there is no child HWND on any of its platforms,
+		/// so it draws the tree and forwards pointer, keyboard and text input); real WPF's host does not,
+		/// and a child window takes its own input and is moved but not scaled by a layout transform. This
+		/// follows which <c>WindowsFormsHost</c> was compiled in - neither backend switches that per
+		/// instance - so it is a property of the build, not a run-time probe.
+		/// </summary>
+#if LIBREWPF
+		private static bool WinFormsHostIsVisual() => true;
+#else
+		private static bool WinFormsHostIsVisual() => false;
+#endif
+
+		/// <summary>
+		/// Offers a mnemonic character to the hosted controls the way WinForms itself receives one: a
+		/// system character that runs the container's <c>ProcessDialogChar</c> and therefore
+		/// <c>ProcessMnemonic</c>. That is the matching a host performs when a mnemonic reaches it; the
+		/// agent cannot deliver one to WPF, because Alt+letter arrives through the keyboard sink of a
+		/// window (HwndSource) or through the backend's own key routing, and neither is reachable from a
+		/// routed key event or from a keysym. So this action calls the WinForms side directly and the WPF
+		/// routing of Alt+letter stays unverified.
+		/// </summary>
+		public string InvokeWinFormsMnemonic(string letter)
+		{
+			if (string.IsNullOrEmpty(letter))
+				throw new ArgumentException("A mnemonic is one character.", nameof(letter));
+
+			System.Windows.Forms.Control root = winFormsHost.Child;
+			if (root == null)
+				throw new InvalidOperationException("The interop pane hosts no WinForms control.");
+
+#if LIBREWPF
+			System.Windows.Forms.LibreControlHosting.DispatchInput(root, new LibreWinForms.Platform.LibreInputEvent(
+				LibreWinForms.Platform.LibreInputEventKind.SystemTextInput,
+				Environment.TickCount64,
+				LibreWinForms.Platform.LibreInputModifiers.Alt,
+				default,
+				letter,
+				default,
+				default,
+				LibreWinForms.Platform.LibrePointerButton.None));
+			Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+			return QueryWinFormsTree();
+#else
+			// Real WPF: the mnemonic arrives through the HwndSource keyboard-input sink, which the agent
+			// cannot post into without Win32. Report that instead of pretending to have tested it.
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["supported"] = false,
+				["reason"] = "real WPF delivers Alt+letter through HwndSource's mnemonic sink, which the agent cannot drive; run this case on a LibreWPF leg",
+			});
+#endif
+		}
+
+		private static void CollectWinFormsControls(
+			System.Windows.Forms.Control root,
+			System.Windows.Forms.Control control,
+			List<Dictionary<string, object>> result)
+		{
+			System.Drawing.Point location = control == root
+				? System.Drawing.Point.Empty
+				: WinFormsOffsetFrom(root, control);
+
+			result.Add(new Dictionary<string, object>
+			{
+				["name"] = control.Name,
+				["type"] = control.GetType().Name,
+				["text"] = control.Text,
+				["tabIndex"] = control.TabIndex,
+				// Raw Control.Focused, kept as diagnostics only: it also requires the WPF window to be
+				// the active window, so the assertions use the container's active control chain instead.
+				["isFocused"] = control.Focused,
+				["enabled"] = control.Enabled,
+				["visible"] = control.Visible,
+				["x"] = location.X,
+				["y"] = location.Y,
+				["width"] = control.Width,
+				["height"] = control.Height,
+			});
+
+			foreach (System.Windows.Forms.Control child in control.Controls)
+				CollectWinFormsControls(root, child, result);
+		}
+
+		/// <summary>
+		/// The control that has focus inside a hosted tree: every container on the way down tracks its own
+		/// active control, so the chain is followed to the end. The host's Tab handling walks the same chain.
+		/// </summary>
+		private static System.Windows.Forms.Control ActiveWinFormsControl(System.Windows.Forms.Control container)
+		{
+			System.Windows.Forms.Control current = (container as System.Windows.Forms.ContainerControl)?.ActiveControl;
+			// A container that names itself as its active control would loop, and a tree deeper than the
+			// cap is not one of these samples; both end the walk instead of hanging the agent.
+			for (int depth = 0; depth < 64 && current is System.Windows.Forms.ContainerControl nested; depth++)
+			{
+				System.Windows.Forms.Control active = nested.ActiveControl;
+				if (active == null || ReferenceEquals(active, nested))
+					break;
+
+				current = active;
+			}
+
+			return current;
+		}
+
+		/// <summary>A hosted control's offset from the hosted root, in WinForms pixels.</summary>
+		private static System.Drawing.Point WinFormsOffsetFrom(
+			System.Windows.Forms.Control root,
+			System.Windows.Forms.Control control)
+		{
+			var offset = new System.Drawing.Point(control.Left, control.Top);
+			for (System.Windows.Forms.Control parent = control.Parent; parent != null && parent != root; parent = parent.Parent)
+				offset.Offset(parent.Left, parent.Top);
+
+			return offset;
+		}
+
+		private static System.Windows.Forms.Control FindWinFormsControl(
+			System.Windows.Forms.Control root,
+			string name)
+		{
+			if (root == null)
+				return null;
+			if (string.Equals(root.Name, name, StringComparison.Ordinal))
+				return root;
+
+			foreach (System.Windows.Forms.Control child in root.Controls)
+			{
+				System.Windows.Forms.Control found = FindWinFormsControl(child, name);
+				if (found != null)
+					return found;
+			}
+
+			return null;
+		}
+
+		/// <summary>
+		/// WinForms pixels per WPF unit for this host: the container's size in pixels against the host's
+		/// size in WPF units. This is the factor the host draws with and converts pointer positions with,
+		/// measured from the live control tree rather than recomputed from the layout and DPI scales.
+		/// </summary>
+		private (double X, double Y) WinFormsPixelsPerUnit()
+		{
+			// The hosted control is the thing that gets a pixel size (the host sizes it in ArrangeOverride);
+			// the container around it can stay unsized, so it is only the fallback.
+			System.Windows.Forms.Control root = winFormsHost.Child;
+			System.Windows.Forms.Control container = root?.Parent;
+			double width = root != null && root.Width > 0 ? root.Width : container?.Width ?? 0;
+			double height = root != null && root.Height > 0 ? root.Height : container?.Height ?? 0;
+
+			return (
+				width > 0 && winFormsHost.ActualWidth > 0 ? width / winFormsHost.ActualWidth : 0,
+				height > 0 && winFormsHost.ActualHeight > 0 ? height / winFormsHost.ActualHeight : 0);
+		}
+
 		/// <summary>The focused element, and whether it sits inside the docking manager's content.</summary>
 		public string QueryFocus() => System.Text.Json.JsonSerializer.Serialize(DescribeFocus());
 
@@ -2222,10 +2551,10 @@ namespace TestApp
 			var source = PresentationSource.FromVisual(target) ?? PresentationSource.FromVisual(this);
 			var before = DescribeFocus();
 
-			// A handler on the way can fail in the backend rather than in AvalonDock (LibreWPF has no
-			// Win32 keyboard state to ask for, for instance). That is reported, because the focus
-			// assertions are still meaningful, but an exception from the app itself is not: it means a
-			// key handler is broken and has to fail the action like any other defect.
+			// A handler on the way can fail in the backend rather than in AvalonDock (a missing native
+			// entry point, for instance). That is reported, because the focus assertions are still
+			// meaningful, but an exception from the app itself is not: it means a key handler is broken
+			// and has to fail the action like any other defect.
 			string error = null;
 			var handled = false;
 			try

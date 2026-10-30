@@ -226,10 +226,22 @@ namespace TestApp
 		[DevFlowAction("avd.query.autohide", Description = "Query the auto-hide flyout: which contents it hosts and whether the named one is open")]
 		public static string QueryAutoHideAction(string contentIdOrTitle = null) => OnUi(w => w.QueryAutoHide(contentIdOrTitle));
 
+		[DevFlowAction("avd.winforms.tree", Description = "Report the hosted WinForms control tree: text, tab index, focus and geometry in WinForms pixels")]
+		public static string QueryWinFormsTreeAction() => OnUi(w => w.QueryWinFormsTree());
+
+		[DevFlowAction("avd.winforms.bounds", Description = "Screen rectangle of one hosted WinForms control, in the same space the agent's clicks use")]
+		public static string QueryWinFormsBoundsAction(string name) => OnUi(w => w.QueryWinFormsBounds(name));
+
+		[DevFlowAction("avd.winforms.scale", Description = "Apply a layout scale to the interop host, which changes the same factor drawing and pointer conversion use")]
+		public static string SetWinFormsScaleAction(double scaleX, double scaleY) => OnUi(w => w.SetWinFormsScale(scaleX, scaleY));
+
+		[DevFlowAction("avd.winforms.mnemonic", Description = "Offer a mnemonic character to the hosted controls through the WinForms system-character path; unsupported on real WPF")]
+		public static string InvokeWinFormsMnemonicAction(string letter) => OnUi(w => w.InvokeWinFormsMnemonic(letter));
+
 		[DevFlowAction("avd.focus.query", Description = "Report the focused element, its type and the document/anchorable it belongs to")]
 		public static string QueryFocusAction() => OnUi(w => w.QueryFocus());
 
-		[DevFlowAction("avd.pane.set-width", Description = "Set the dock width of the anchorable pane group hosting a content, so narrow panes (Tool Window 1 is declared 50 wide) have tabs that can be clicked")]
+		[DevFlowAction("avd.pane.set-width", Description = "Set the dock width of the container that sizes a content's pane (its pane group, or the pane itself when it has no group), so narrow panes (Tool Window 1 is declared 50 wide) have tabs that can be clicked")]
 		public static string SetPaneGroupWidthAction(string contentId, double width) => OnUi(w => w.SetPaneGroupWidth(contentId, width));
 
 		[DevFlowAction("avd.focus.set", Description = "Focus the first TextBox of a document or anchorable, as clicking into its content does")]

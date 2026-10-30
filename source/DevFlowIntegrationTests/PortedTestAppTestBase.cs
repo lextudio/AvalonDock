@@ -122,7 +122,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				using var widened = JsonDocument.Parse(await client.InvokeAsync("avd.pane.set-width", contentId, 300));
 				Assert.True(
 					ReadBool(widened.RootElement, "changed"),
-					$"'{contentId}' has no anchorable pane group to widen, so its tab would stay a sliver overlapped by its neighbour.");
+					$"'{contentId}' has no pane group or pane to widen, so its tab would stay a sliver overlapped by its neighbour.");
 			}
 
 			var bounds = await client.QueryBoundsAsync(kind, contentId);

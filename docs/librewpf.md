@@ -981,8 +981,10 @@ Becomes simpler, with one honest caveat.
        macOS with `EnableWindowsTargeting`; 224 findings fixed: `dotnet format` for style rules, XML docs
        by hand, regions removed, `CA1502`/`CA1506` suppressed with a justification on
        `LayoutAutoHideWindowControl`, `LayoutFloatingWindowControl` and `OverlayWindow.GetTargets`).
-8. [x] Windows DevFlow legs on LibreWPF. TestApp skips its WinForms pane under LIBREWPF (LibreWinForms
-       hands `WindowsFormsHost` a synthetic handle, a LibreWPF gap). The remaining failures were the runner
+8. [x] Windows DevFlow legs on LibreWPF. TestApp used to skip its WinForms pane under LIBREWPF (LibreWinForms
+       hands `WindowsFormsHost` a synthetic handle, a LibreWPF gap); that gap was closed on 2026-10-29 (11.9,
+       visual `WindowsFormsHost`), so the pane is hosted by default and `DEVFLOW_HOST_WINFORMS=0` is the
+       opt-out. The remaining failures were the runner
        desktop, not the code: windows-11-arm logs in to the first-logon privacy page (a full-screen window
        that took every real click) and then leaves the Start menu open, its WSL app runs `wsl.exe --update` every 30 s in a new Windows
        Terminal window that takes the foreground during the tests, and the agent's console window
@@ -1074,6 +1076,83 @@ Becomes simpler, with one honest caveat.
   CliclickSharp took priority on macOS (`ecac77d`): the same drags stopped reaching the drop targets. On macOS
   the installed cliclick (which the CI installs) is preferred again and CliclickSharp is the fallback; Windows
   keeps CliclickSharp.exe. Whether the C# port can match the original on macOS is a DevFlow (ui-labs) question.
+- 2026-10-29 (**visual WindowsFormsHost published**): OpenAvalon republished
+  `0.1.0-preview.69` at 04:39Z (`Publish LibreWPF GitHub Packages`, run 40809590217, 6/6 jobs), so the
+  feed finally carried the host that had been committed at 02:52-02:58Z (keyboard/text/focus forwarding,
+  Tab traversal, Alt+letter mnemonics). The metadata of the published
+  `LibreWinForms.WindowsFormsIntegration` DLL was checked to contain `OnMnemonicCore`,
+  `TryProcessMnemonic`, `SelectNextControl` and `VisualPixelsPerUnit` - a check that the code shipped, not
+  that it worked: the two entries below show that in that build every key reaching the host threw and the
+  Tab traversal started from the wrong control. A manual dispatch of
+  `ci-librewpf.yml` with `host_winforms=true` (run 40819253489) then ran the full suite with the interop
+  pane hosted: **linux-x64 149/149 with 0 skips (615 s), macOS 147 + 2 known macOS-runner skips (964 s),
+  and both Windows legs green**. TestApp now hosts the pane by default under `#if LIBREWPF`;
+  `DEVFLOW_HOST_WINFORMS=0` restores the placeholder, and the workflow's `host_winforms` input is gone
+  because it could only repeat the default.
+- 2026-10-29 (**the visual host painted nothing and could not be clicked: container never sized**): the
+  five green legs proved the host loads and the app survives, but nothing in the suite touched the hosted
+  content, so a new `HostedWinFormsTests` suite was added (`avd.winforms.tree`, `.bounds`, `.scale`,
+  `.mnemonic`). Its first run showed text input and Tab never reaching the hosted
+  tree. The probe that separated the layers: a real native click at the centre of the pane reported
+  `originalSource = System.Windows.Controls.Border` (the WPF input hit test never selected the host), a
+  pointer event dispatched straight into the hosted tree did not focus a text box either, and
+  `avd.winforms.tree` showed the host container at **0x0** while the hosted control was 956x1028 px.
+  Reading `WindowsFormsHost` confirmed it: in the visual path only `Child.Size` is set (the HWND path sizes
+  the container through the child window), and `OnRender` returns early for a zero-sized container, so
+  **the host never painted, and the WinForms hit test had no bounds to search**. A first fix (a transparent
+  hit rectangle, LibreWPF `d11ac30ce`) was drawn after that early return and therefore could not take
+  effect; the second attempt, `32bb71bf3`, sized the container but still sat behind a guard: a local trace
+  showed `OnRender` receives a plain `System.Windows.Media.VisualDrawingContext` (`native=False`) under the
+  default managed composition renderer, so the host returned at `TryGetNativeDrawingContext` before doing
+  anything. The real fix is LibreWPF `a783bd75b` (OpenAvalon `eb4e711`): the container follows `Child.Size`
+  and the transparent hit rectangle is drawn before, and independently of, the native paint, for a host
+  with no real child window. What the probe did show working without
+  it: the mnemonic path (`ProcessMnemonic` through the WinForms system-character route ran the hosted
+  button's handler). The earlier "five legs green with the pane hosted" therefore proves loading only, not painting or
+  interaction.
+- 2026-10-29 (**the interop suite: what actually works, and two more host gaps it found**): with
+  `a783bd75b` published (OpenAvalon run 40839987388, `0.1.0-preview.69` at 09:35Z) the four cases of
+  `HostedWinFormsTests` ran against the package. Text input passed (a native click focuses `textBox1` and
+  typed text lands in it) and the mnemonic case passed, but **Tab failed on two product gaps and the
+  scaled-host case on a defect in the test's own arithmetic**:
+  1. **Every key that reached an `HwndHost` threw.** `HwndKeyboardInputProvider.GetSystemModifierKeys`
+     calls `user32!GetKeyState`, and the portable runtime's user32 stub has no such export, so
+     `HwndHost.OnKeyDown` threw `EntryPointNotFoundException` before the host's own handler ran - which
+     also broke `HwndSource`'s mnemonic path. Fixed in LibreWPF `f77955728`: portable input reads its
+     modifier state from the portable keyboard device, the native path is untouched.
+  2. **Tab started from the wrong control, and moved in the wrong container.** `SelectNextControl` was
+     called with the adapter's `ActiveControl`, which is the hosted *root* (`UserControl1`), not the
+     control that has focus; from a focus-managing container the walk found nothing, so the host reported
+     Tab unhandled on every press. Fixed in the same commit and refined in the next: follow the
+     `ActiveControl` chain down to the focused control, move inside the container that owns it, and when
+     that container has no stop left continue from the container itself in its parent. Tab now goes
+     `textBox1` -> `textBox2` -> `mnemonicButton` and is left unhandled at the end (still no wrap).
+  3. **`avd.winforms.bounds` applied a conversion that does not exist** (test defect, not product): it
+     divided `PointToScreen` through a measured units-per-DIP factor, which is wrong on both backends
+     (`PointToScreen` is already in the space clicks use; see 11.10) and doubled the error under a layout
+     transform. It now maps the control's two corners and reports them, and the scaled case measures the
+     factor at 1x first instead of assuming it is 1 (it is already 2 on a Retina Mac).
+  The Tab case also asserted something unobservable: WPF's own tab traversal runs in `InputManager`'s
+  translate-accelerator stage, which a routed key event raised by the agent never reaches, so "focus left
+  the host" cannot be seen there - the case asserts the unhandled signal only.
+  **Verified locally on macOS** against TestApp with the two product assemblies built from source and
+  overlaid: `HostedWinFormsTests` 4/4, including a real native click at the scaled rectangle's centre
+  landing on `textBox2`. The cases skip on the build-level `visualHost` report of `avd.winforms.tree`
+  (which `WindowsFormsHost` this assembly has) instead of on the OS, because the LibreWPF line also runs on
+  Windows: there the visual host is the same one, so those legs exercise the suite too - **but it has not
+  run on CI since that change**. They also go through the shared `NativeInputEnvironment` guard, since the
+  clicks are OS-level input. Also **not verified**: Shift+Tab
+  (the agent cannot hold a modifier); the WPF routing of Alt+letter (the host's `OnMnemonicCore` calls the
+  same `TryProcessMnemonic`, but only `HwndSource` reaches it, and the agent cannot post into it, so the
+  mnemonic case calls the WinForms matching directly); and **painting** - under the managed renderer the
+  host still draws no pixels, because painting needs a native ProGPU context. That is a separate gap (a
+  managed paint path, for example rendering the tree to a bitmap) and is not covered by any of the fixes
+  above. All three host commits (`f77955728`, the Tab refinement `7624b058d`) are published as the same
+  `0.1.0-preview.69`: the publish workflow deletes the version from GitHub Packages before pushing it, so a
+  fresh restore - which is what CI does - gets the new assembly, while a developer's global-packages folder
+  keeps the copy it extracted first and has to be cleared by hand. The consumer pin therefore stays
+  `0.1.0-preview.69`.
+
 - 2026-10-27 (macOS, run on a real desktop with Accessibility granted to Claude.app): `DragDockedPaneResizer_ResizesToolPane`
   passed as is; `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed on `DockingManagerDockLeft`
   reporting y=770 below the manager (y 77 to 733). Cause: `DropTarget.GetScreenBounds()` multiplied the stored
