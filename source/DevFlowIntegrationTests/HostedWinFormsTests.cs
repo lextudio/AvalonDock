@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -59,175 +61,315 @@ namespace AvalonDock.DevFlowIntegrationTests
 		{
 			// The cases click, which is OS-level pointer input on some paths (see NativeInputEnvironment).
 			NativeInputEnvironment.EnsureNativeDragAvailable();
-
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
 
-			await ActivatePaneAsync(client);
+			await RunWithFailureArtifactsAsync(client, nameof(TextInput_ReachesHostedTextBox), async () =>
+			{
+				await ActivatePaneAsync(client);
 
-			await ClickHostedControlAsync(client, "textBox1");
-			await WaitForFocusedControlAsync(client, "textBox1");
+				await ClickHostedControlAsync(client, "textBox1");
+				await WaitForFocusedControlAsync(client, "textBox1");
 
-			await client.InvokeAsync("avd.input.text", "Hello WinForms");
+				await client.InvokeAsync("avd.input.text", "Hello WinForms");
 
-			await WaitUntilAsync(
-				async () => HostedControlText(await QueryWinFormsAsync(client), "textBox1")?.Contains("Hello WinForms", StringComparison.Ordinal) == true,
-				TimeSpan.FromSeconds(5),
-				"Text typed at the WPF host did not reach the hosted WinForms text box.");
+				await WaitUntilAsync(
+					async () => HostedControlText(await QueryWinFormsAsync(client), "textBox1")?.Contains("Hello WinForms", StringComparison.Ordinal) == true,
+					TimeSpan.FromSeconds(5),
+					"Text typed at the WPF host did not reach the hosted WinForms text box.");
 
-			await AssertAppAliveAsync(client);
+				await AssertAppAliveAsync(client);
+			});
 		}
 
 		[Fact]
 		public async Task TabKey_MovesThroughHostedControlsAndLeavesTheHost()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
-
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
 
-			await ActivatePaneAsync(client);
+			await RunWithFailureArtifactsAsync(client, nameof(TabKey_MovesThroughHostedControlsAndLeavesTheHost), async () =>
+			{
+				await ActivatePaneAsync(client);
 
-			await ClickHostedControlAsync(client, "textBox1");
-			await WaitForFocusedControlAsync(client, "textBox1");
+				await ClickHostedControlAsync(client, "textBox1");
+				await WaitForFocusedControlAsync(client, "textBox1");
 
-			// Forward through the hosted tab order: textBox1 -> textBox2 -> mnemonicButton. Each of those
-			// is handled by the host, so WPF does not move its focus.
-			Assert.True(await TabAsync(client, "Tab"), "Tab inside the host reported itself unhandled before the last tab stop.");
-			await WaitForFocusedControlAsync(client, "textBox2");
-			Assert.True(await TabAsync(client, "Tab"), "Tab inside the host reported itself unhandled before the last tab stop.");
-			await WaitForFocusedControlAsync(client, "mnemonicButton");
+				// Forward through the hosted tab order: textBox1 -> textBox2 -> mnemonicButton. Each of those
+				// is handled by the host, so WPF does not move its focus.
+				Assert.True(await TabAsync(client, "Tab"), "Tab inside the host reported itself unhandled before the last tab stop.");
+				await WaitForFocusedControlAsync(client, "textBox2");
+				Assert.True(await TabAsync(client, "Tab"), "Tab inside the host reported itself unhandled before the last tab stop.");
+				await WaitForFocusedControlAsync(client, "mnemonicButton");
 
-			// The last tab stop does not wrap: the host leaves the key unhandled. That is the difference
-			// to WinForms' own container, which cycles. Leave the rest to WPF: its tab traversal runs in
-			// InputManager's translate-accelerator stage, which a routed key event raised by the agent
-			// never reaches, so the focus after it is not observable here - only the signal is.
-			Assert.False(await TabAsync(client, "Tab"), "Tab at the last tab stop was handled, so focus can never leave the host.");
+				// The last tab stop does not wrap: the host leaves the key unhandled. That is the difference
+				// to WinForms' own container, which cycles. Leave the rest to WPF: its tab traversal runs in
+				// InputManager's translate-accelerator stage, which a routed key event raised by the agent
+				// never reaches, so the focus after it is not observable here - only the signal is.
+				Assert.False(await TabAsync(client, "Tab"), "Tab at the last tab stop was handled, so focus can never leave the host.");
+			});
 		}
 
 		[Fact]
 		public async Task Mnemonic_InvokesHostedButton()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
-
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
 
-			await ActivatePaneAsync(client);
+			await RunWithFailureArtifactsAsync(client, nameof(Mnemonic_InvokesHostedButton), async () =>
+			{
+				await ActivatePaneAsync(client);
 
-			await ClickHostedControlAsync(client, "textBox1");
-			await WaitForFocusedControlAsync(client, "textBox1");
+				await ClickHostedControlAsync(client, "textBox1");
+				await WaitForFocusedControlAsync(client, "textBox1");
 
-			// The marker must not be there already, or a leftover from an earlier step would pass this case.
-			Assert.DoesNotContain(
-				"mnemonic: clicked",
-				HostedControlText(await QueryWinFormsAsync(client), "label2") ?? string.Empty,
-				StringComparison.Ordinal);
+				// The marker must not be there already, or a leftover from an earlier step would pass this case.
+				Assert.DoesNotContain(
+					"mnemonic: clicked",
+					HostedControlText(await QueryWinFormsAsync(client), "label2") ?? string.Empty,
+					StringComparison.Ordinal);
 
-			// This reaches the WinForms side of a mnemonic - the system-character path that runs
-			// ProcessMnemonic - directly. It does not go through the WPF host's OnMnemonicCore, which only
-			// HwndSource calls and which the agent cannot drive (no chords), so the WPF routing of
-			// Alt+letter stays unverified. A build whose host cannot be reached this way says so instead
-			// of pretending, so that is a failure rather than a silent pass.
-			using var result = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.mnemonic", "M"));
-			Assert.False(
-				result.RootElement.TryGetProperty("supported", out var supported)
-					&& supported.ValueKind == JsonValueKind.False,
-				ReadString(result.RootElement, "reason") ?? "the mnemonic action refused to run on this build");
+				// This reaches the WinForms side of a mnemonic - the system-character path that runs
+				// ProcessMnemonic - directly. It does not go through the WPF host's OnMnemonicCore, which only
+				// HwndSource calls and which the agent cannot drive (no chords), so the WPF routing of
+				// Alt+letter stays unverified. A build whose host cannot be reached this way says so instead
+				// of pretending, so that is a failure rather than a silent pass.
+				using var result = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.mnemonic", "M"));
+				Assert.False(
+					result.RootElement.TryGetProperty("supported", out var supported)
+						&& supported.ValueKind == JsonValueKind.False,
+					ReadString(result.RootElement, "reason") ?? "the mnemonic action refused to run on this build");
 
-			// The button's text starts with "&M", so ProcessMnemonic matches "M" and runs its Click
-			// handler, which writes a marker into label2. That marker is the only observable proof.
-			await WaitUntilAsync(
-				async () => HostedControlText(await QueryWinFormsAsync(client), "label2")?.Contains("mnemonic: clicked", StringComparison.Ordinal) == true,
-				TimeSpan.FromSeconds(5),
-				"The hosted button's mnemonic did not run its Click handler.");
+				// The button's text starts with "&M", so ProcessMnemonic matches "M" and runs its Click
+				// handler, which writes a marker into label2. That marker is the only observable proof.
+				await WaitUntilAsync(
+					async () => HostedControlText(await QueryWinFormsAsync(client), "label2")?.Contains("mnemonic: clicked", StringComparison.Ordinal) == true,
+					TimeSpan.FromSeconds(5),
+					"The hosted button's mnemonic did not run its Click handler.");
+			});
 		}
 
 		[Fact]
 		public async Task ScaledHost_ClickLandsOnTheControlItsBoundsDescribe()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
-
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(
 				client,
 				"this build hosts the pane in a native child window, which a layout transform moves but does not scale");
 
-			await ActivatePaneAsync(client);
+			await RunWithFailureArtifactsAsync(client, nameof(ScaledHost_ClickLandsOnTheControlItsBoundsDescribe), async () =>
+			{
+				await ActivatePaneAsync(client);
 
-			// pixels per unit already contains the DPI scale (it is 2 on a Retina display at 1x), so the
-			// baseline is measured rather than assumed: otherwise a scale that silently did nothing would
-			// pass. It is polled, because the factor comes from an arranged layout pass.
-			double unitAtOne = 0;
-			await WaitUntilAsync(
-				async () =>
-				{
-					using var unscaled = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.scale", 1d, 1d));
-					unitAtOne = unscaled.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
-					return unitAtOne > 0;
-				},
-				TimeSpan.FromSeconds(5),
-				"The host reported no pixels per unit at 1x, so there is nothing to scale.");
+				// pixels per unit already contains the DPI scale (it is 2 on a Retina display at 1x), so the
+				// baseline is measured rather than assumed: otherwise a scale that silently did nothing would
+				// pass. It is polled, because the factor comes from an arranged layout pass.
+				double unitAtOne = 0;
+				await WaitUntilAsync(
+					async () =>
+					{
+						using var unscaled = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.scale", 1d, 1d));
+						unitAtOne = unscaled.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
+						return unitAtOne > 0;
+					},
+					TimeSpan.FromSeconds(5),
+					"The host reported no pixels per unit at 1x, so there is nothing to scale.");
 
-			// The application is restarted before every case, so the scale does not have to be put back.
-			double pixelsPerUnit = 0;
-			string lastScale = null;
-			await WaitUntilAsync(
-				async () =>
-				{
-					using var scaled = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.scale", 2d, 2d));
-					pixelsPerUnit = scaled.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
-					lastScale = scaled.RootElement.GetRawText();
-					return pixelsPerUnit > unitAtOne * 1.5;
-				},
-				TimeSpan.FromSeconds(5),
-				$"The host did not take the layout scale: pixels per unit stayed at {unitAtOne}. Scale={lastScale}");
+				// The application is restarted before every case, so the scale does not have to be put back.
+				double pixelsPerUnit = 0;
+				string lastScale = null;
+				await WaitUntilAsync(
+					async () =>
+					{
+						using var scaled = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.scale", 2d, 2d));
+						pixelsPerUnit = scaled.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
+						lastScale = scaled.RootElement.GetRawText();
+						return pixelsPerUnit > unitAtOne * 1.5;
+					},
+					TimeSpan.FromSeconds(5),
+					$"The host did not take the layout scale: pixels per unit stayed at {unitAtOne}. Scale={lastScale}");
 
-			// The bounds are computed with that same factor, so a click aimed at their centre has to land
-			// on textBox2. A mismatch between the drawing factor and the pointer factor lands elsewhere,
-			// which is exactly what this catches.
-			await ClickHostedControlAsync(client, "textBox2");
-			await WaitForFocusedControlAsync(client, "textBox2");
+				// The bounds are computed with that same factor, so a click aimed at their centre has to land
+				// on textBox2. A mismatch between the drawing factor and the pointer factor lands elsewhere,
+				// which is exactly what this catches.
+				await ClickHostedControlAsync(client, "textBox2");
+				await WaitForFocusedControlAsync(client, "textBox2");
+			});
 		}
 
 		[Fact]
 		public async Task ManagedRenderer_PaintsTheHostedTreeAsATexture()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
-
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
 
-			await ActivatePaneAsync(client);
+			await RunWithFailureArtifactsAsync(client, nameof(ManagedRenderer_PaintsTheHostedTreeAsATexture), async () =>
+			{
+				await ActivatePaneAsync(client);
 
-			using var paint = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.paint"));
-			Assert.True(
-				ReadBool(paint.RootElement, "hasRenderData"),
-				$"The host recorded no render data, so the pane draws nothing. Paint={paint.RootElement.GetRawText()}");
+				using var paint = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.paint"));
+				Assert.True(
+					ReadBool(paint.RootElement, "hasRenderData"),
+					$"The host recorded no render data, so the pane draws nothing. Paint={paint.RootElement.GetRawText()}");
 
-			var images = ReadArray(paint.RootElement, "images");
-			Assert.True(
-				images.Any(),
-				$"The host's retained content does not depend on any image, so the hosted tree is not drawn. Paint={paint.RootElement.GetRawText()}");
+				var images = ReadArray(paint.RootElement, "images");
+				Assert.True(
+					images.Any(),
+					$"The host's retained content does not depend on any image, so the hosted tree is not drawn. Paint={paint.RootElement.GetRawText()}");
 
-			// A portable native image is drawn from a backend texture, so the pixels never come back to
-			// the CPU; a pixel bitmap here would mean the tree is copied through managed memory.
-			var image = images.First();
-			Assert.True(
-				ReadBool(image, "portable"),
-				$"The host draws the tree from a CPU bitmap rather than a backend texture. Image={image.GetRawText()}");
+				// A portable native image is drawn from a backend texture, so the pixels never come back to
+				// the CPU; a pixel bitmap here would mean the tree is copied through managed memory.
+				var image = images.First();
+				Assert.True(
+					ReadBool(image, "portable"),
+					$"The host draws the tree from a CPU bitmap rather than a backend texture. Image={image.GetRawText()}");
 
-			// The texture is the control tree in WinForms pixels: one pixel per WinForms pixel, so the
-			// host's DIP size times the factor the pointer conversion uses. Fewer pixels would mean the
-			// drawing is upscaled from a coarser surface.
-			using var tree = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.tree"));
-			var pixelsPerUnit = tree.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
-			var hostWidth = paint.RootElement.GetProperty("hostWidthInDip").GetDouble();
-			var pixelWidth = image.GetProperty("pixelWidth").GetInt32();
-			Assert.True(
-				pixelsPerUnit > 0 && hostWidth > 0,
-				$"The host reports no size to compare the painted texture with. Tree={tree.RootElement.GetRawText()}");
-			Assert.InRange(pixelWidth, hostWidth * pixelsPerUnit - 1, hostWidth * pixelsPerUnit + 1);
+				// The texture is the control tree in WinForms pixels: one pixel per WinForms pixel, so the
+				// host's DIP size times the factor the pointer conversion uses. Fewer pixels would mean the
+				// drawing is upscaled from a coarser surface.
+				using var tree = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.tree"));
+				var pixelsPerUnit = tree.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
+				var hostWidth = paint.RootElement.GetProperty("hostWidthInDip").GetDouble();
+				var pixelWidth = image.GetProperty("pixelWidth").GetInt32();
+				Assert.True(
+					pixelsPerUnit > 0 && hostWidth > 0,
+					$"The host reports no size to compare the painted texture with. Tree={tree.RootElement.GetRawText()}");
+				Assert.InRange(pixelWidth, hostWidth * pixelsPerUnit - 1, hostWidth * pixelsPerUnit + 1);
+			});
+		}
+
+		/// <summary>
+		/// Runs one case and, when it fails, leaves what the failure needs in order to be understood: the
+		/// screen, the hosted tree, the geometry of the controls the case clicks, and the application's own
+		/// layout and input reports. The runner uploads <c>TestResults</c>, so a run on a machine nobody can
+		/// attach to still explains itself.
+		/// </summary>
+		private static async Task RunWithFailureArtifactsAsync(DevFlowClient client, string caseName, Func<Task> body)
+		{
+			try
+			{
+				await body();
+			}
+			catch
+			{
+				await CaptureFailureStateAsync(client, caseName);
+				throw;
+			}
+		}
+
+		private static async Task CaptureFailureStateAsync(DevFlowClient client, string caseName)
+		{
+			string directory = FailureDirectory();
+			string prefix = Path.Combine(directory, $"{caseName}-{DateTime.UtcNow:HHmmss}");
+
+			await WriteStateAsync(client, prefix + "-tree.json", "avd.winforms.tree");
+			await WriteStateAsync(client, prefix + "-bounds-textBox1.json", "avd.winforms.bounds", "textBox1");
+			await WriteStateAsync(client, prefix + "-bounds-mnemonicButton.json", "avd.winforms.bounds", "mnemonicButton");
+			await WriteStateAsync(client, prefix + "-paint.json", "avd.winforms.paint");
+			await WriteStateAsync(client, prefix + "-input.json", "avd.input.query");
+			await WriteStateAsync(client, prefix + "-layout.json", "avd.query.layout");
+			CaptureScreen(prefix + ".png");
+		}
+
+		private static async Task WriteStateAsync(DevFlowClient client, string path, string action, params object[] args)
+		{
+			try
+			{
+				Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+				await File.WriteAllTextAsync(path, await client.InvokeAsync(action, args));
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine($"[hosted-winforms] {Path.GetFileName(path)}: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Where failure artifacts go. The runner uploads <c>&lt;workspace&gt;/TestResults</c>; a local run keeps
+		/// them next to the test assembly so they can be looked at without a runner.
+		/// </summary>
+		private static string FailureDirectory()
+		{
+			string root = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE");
+			if (string.IsNullOrEmpty(root))
+			{
+				root = AppContext.BaseDirectory;
+			}
+
+			return Path.Combine(root, "TestResults", "hosted-winforms");
+		}
+
+		/// <summary>
+		/// Saves the whole screen with the platform's own tool. A tool that is missing or a capture that
+		/// fails is reported on stderr and never replaces the failure it was meant to explain.
+		/// </summary>
+		private static void CaptureScreen(string path)
+		{
+			try
+			{
+				Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+				if (OperatingSystem.IsMacOS())
+				{
+					RunCapture("screencapture", new[] { "-x", path });
+				}
+				else if (OperatingSystem.IsWindows())
+				{
+					const string script = """
+						Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+						$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+						$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+						[System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+						$bitmap.Save($env:HOSTED_WINFORMS_CAPTURE, [System.Drawing.Imaging.ImageFormat]::Png)
+						""";
+					RunCapture(
+						"pwsh",
+						new[] { "-NoProfile", "-NonInteractive", "-Command", script },
+						("HOSTED_WINFORMS_CAPTURE", path));
+				}
+				else
+				{
+					RunCapture("import", new[] { "-window", "root", path });
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine($"[hosted-winforms] no screenshot: {ex.Message}");
+			}
+		}
+
+		private static void RunCapture(string fileName, string[] arguments, params (string Name, string Value)[] environment)
+		{
+			var startInfo = new ProcessStartInfo(fileName)
+			{
+				UseShellExecute = false,
+				RedirectStandardError = true,
+			};
+			foreach (string argument in arguments)
+			{
+				startInfo.ArgumentList.Add(argument);
+			}
+
+			foreach ((string name, string value) in environment)
+			{
+				startInfo.Environment[name] = value;
+			}
+
+			using Process process = Process.Start(startInfo)
+				?? throw new InvalidOperationException($"'{fileName}' could not be started.");
+			if (!process.WaitForExit(30_000))
+			{
+				process.Kill();
+				throw new TimeoutException($"'{fileName}' did not finish in 30 seconds.");
+			}
+
+			if (process.ExitCode != 0)
+			{
+				throw new InvalidOperationException($"'{fileName}' exited with {process.ExitCode}: {process.StandardError.ReadToEnd()}");
+			}
 		}
 
 		/// <summary>Makes the interop pane active, frontmost and wide enough that its content is not clipped.</summary>
