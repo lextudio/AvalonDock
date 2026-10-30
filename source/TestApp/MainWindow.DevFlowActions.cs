@@ -238,6 +238,9 @@ namespace TestApp
 		[DevFlowAction("avd.winforms.mnemonic", Description = "Offer a mnemonic character to the hosted controls through the WinForms system-character path; unsupported on real WPF")]
 		public static string InvokeWinFormsMnemonicAction(string letter) => OnUi(w => w.InvokeWinFormsMnemonic(letter));
 
+		[DevFlowAction("avd.winforms.paint", Description = "Report what the host draws for the hosted tree under this renderer: the images in its retained drawing, their portable surface size and the renderer mode")]
+		public static string QueryWinFormsPaintAction() => OnUi(w => w.QueryWinFormsPaint());
+
 		[DevFlowAction("avd.focus.query", Description = "Report the focused element, its type and the document/anchorable it belongs to")]
 		public static string QueryFocusAction() => OnUi(w => w.QueryFocus());
 

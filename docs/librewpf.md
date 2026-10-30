@@ -1110,6 +1110,30 @@ Becomes simpler, with one honest caveat.
   it: the mnemonic path (`ProcessMnemonic` through the WinForms system-character route ran the hosted
   button's handler). The earlier "five legs green with the pane hosted" therefore proves loading only, not painting or
   interaction.
+- 2026-10-29 (**the managed renderer painted nothing: the host now paints into a ProGPU texture**): the
+  visual host only painted when `OnRender` received a live ProGPU drawing context, and the managed
+  composition renderer never hands it one - it records WPF render data and builds the ProGPU scene from
+  that afterwards - so under the default renderer (**the one every LibreWPF leg runs**) the pane drew no
+  pixels at all. The host now paints the tree into an offscreen ProGPU texture: LibreWinForms' `Graphics`
+  records the controls' drawing as ProGPU scene commands into a `Bitmap`, the bitmap renders them into its
+  own GPU texture (`Compositor.RenderOffscreen`), and that texture is recorded as an image over the host's
+  bounds through `PortableNativeImageSourceFactory` and `IPortableNativeImageSource`. The image is a
+  texture-lease source, so nothing is read back to the CPU and the texture materializes in the
+  presentation host's device on demand; the native-context path is unchanged and still runs first
+  (LibreWPF `5e2526109`). Verified locally on macOS with the managed renderer at DPI scale 2: the hosted
+  labels and text boxes are visible in the pane, and `HostedWinFormsTests` 5/5, including a new case that
+  reads the host's retained render data - it depends on a 956x1028 portable native image for a 478x514
+  DIP element, which is one texture pixel per WinForms pixel (LibreWPF package not yet published, and the
+  suite has not run on CI since). **Still open**: everything the hosted tree draws through
+  `TextRenderer` is invisible - a `TextBox`'s content and a `Button`'s caption - while everything drawn
+  through `Graphics.DrawString` (labels, borders, backgrounds) shows up. Reproduced by typing into
+  `textBox1`: the text is in the control and painted nowhere. **Not the text service**: `LibrePlatform`
+  is already registered with `ProGpuTextRendererService` (the `LibreWinForms.ProGPU` module initializer
+  does it), and both that service and a raw `Graphics.DrawString` draw black pixels when the host calls
+  them on its own surface - so the surface, the offscreen flush and the text path all work. The painter
+  reaches those two controls' borders but not the text they lay out, which points at
+  `PaintPortableControlTree` (a button's caption rectangle, a text box's retained text) rather than at
+  the platform or the host.
 - 2026-10-29 (**the interop suite: what actually works, and two more host gaps it found**): with
   `a783bd75b` published (OpenAvalon run 40839987388, `0.1.0-preview.69` at 09:35Z) the four cases of
   `HostedWinFormsTests` ran against the package. Text input passed (a native click focuses `textBox1` and

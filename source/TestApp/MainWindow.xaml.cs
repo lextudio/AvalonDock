@@ -2516,6 +2516,58 @@ namespace TestApp
 		/// <summary>The focused element, and whether it sits inside the docking manager's content.</summary>
 		public string QueryFocus() => System.Text.Json.JsonSerializer.Serialize(DescribeFocus());
 
+		/// <summary>
+		/// What the host records into the managed renderer for the hosted tree. Without a native drawing
+		/// context it paints the tree into an offscreen ProGPU texture and records that texture as an image
+		/// (see docs/librewpf.md, 11.9), so the retained render data of the element has to depend on a
+		/// portable native image and draw it over the host's own bounds.
+		/// </summary>
+#if LIBREWPF
+		public string QueryWinFormsPaint()
+		{
+			var images = new List<Dictionary<string, object>>();
+			int renderDataBytes = 0;
+			ProGPU.Wpf.Interop.PortableRenderDataSnapshot snapshot = null;
+			if (winFormsHost is ProGPU.Wpf.Interop.IPortableDrawingContentSource contentSource
+				&& contentSource.TryGetPortableDrawingContent(out object content)
+				&& content is ProGPU.Wpf.Interop.IPortableRenderDataSource renderDataSource)
+			{
+				renderDataSource.TryGetPortableRenderDataSnapshot(out snapshot);
+			}
+
+			if (snapshot != null)
+			{
+				renderDataBytes = snapshot.RenderData.Length;
+				foreach (object resource in snapshot.DependentResources)
+				{
+					if (resource is not ProGPU.Wpf.Interop.IPortableNativeImageSource image)
+						continue;
+
+					// A portable native image is drawn from a backend texture, so the pixels never come
+					// back to the CPU; a bitmap resource here would mean a copy through managed memory.
+					images.Add(new Dictionary<string, object>
+					{
+						["type"] = resource.GetType().Name,
+						["portable"] = true,
+						["pixelWidth"] = image.PixelWidth,
+						["pixelHeight"] = image.PixelHeight,
+						["dpiX"] = image.DpiX,
+						["dpiY"] = image.DpiY,
+					});
+				}
+			}
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["hasRenderData"] = snapshot != null,
+				["renderDataBytes"] = renderDataBytes,
+				["hostWidthInDip"] = winFormsHost.RenderSize.Width,
+				["hostHeightInDip"] = winFormsHost.RenderSize.Height,
+				["images"] = images,
+			});
+		}
+#endif
+
 		/// <summary>Focuses the first TextBox a document or anchorable hosts (a click would do the same).</summary>
 		public string SetFocus(string contentIdOrTitle)
 		{

@@ -190,6 +190,46 @@ namespace AvalonDock.DevFlowIntegrationTests
 			await WaitForFocusedControlAsync(client, "textBox2");
 		}
 
+		[Fact]
+		public async Task ManagedRenderer_PaintsTheHostedTreeAsATexture()
+		{
+			NativeInputEnvironment.EnsureNativeDragAvailable();
+
+			using var client = await TryConnectAsync();
+			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
+
+			await ActivatePaneAsync(client);
+
+			using var paint = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.paint"));
+			Assert.True(
+				ReadBool(paint.RootElement, "hasRenderData"),
+				$"The host recorded no render data, so the pane draws nothing. Paint={paint.RootElement.GetRawText()}");
+
+			var images = ReadArray(paint.RootElement, "images");
+			Assert.True(
+				images.Any(),
+				$"The host's retained content does not depend on any image, so the hosted tree is not drawn. Paint={paint.RootElement.GetRawText()}");
+
+			// A portable native image is drawn from a backend texture, so the pixels never come back to
+			// the CPU; a pixel bitmap here would mean the tree is copied through managed memory.
+			var image = images.First();
+			Assert.True(
+				ReadBool(image, "portable"),
+				$"The host draws the tree from a CPU bitmap rather than a backend texture. Image={image.GetRawText()}");
+
+			// The texture is the control tree in WinForms pixels: one pixel per WinForms pixel, so the
+			// host's DIP size times the factor the pointer conversion uses. Fewer pixels would mean the
+			// drawing is upscaled from a coarser surface.
+			using var tree = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.tree"));
+			var pixelsPerUnit = tree.RootElement.GetProperty("pixelsPerUnitX").GetDouble();
+			var hostWidth = paint.RootElement.GetProperty("hostWidthInDip").GetDouble();
+			var pixelWidth = image.GetProperty("pixelWidth").GetInt32();
+			Assert.True(
+				pixelsPerUnit > 0 && hostWidth > 0,
+				$"The host reports no size to compare the painted texture with. Tree={tree.RootElement.GetRawText()}");
+			Assert.InRange(pixelWidth, hostWidth * pixelsPerUnit - 1, hostWidth * pixelsPerUnit + 1);
+		}
+
 		/// <summary>Makes the interop pane active, frontmost and wide enough that its content is not clipped.</summary>
 		private async Task ActivatePaneAsync(DevFlowClient client)
 		{
