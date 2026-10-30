@@ -50,6 +50,10 @@ namespace AvalonDock.DevFlowIntegrationTests
 		/// Portable input delivers Alt+letter as text: the letter arrives at the focused hosted control and
 		/// OnMnemonicCore never runs. Recorded here so the case reports it instead of failing the leg.
 		/// </summary>
+		/// <summary>Holding a key is a cliclick gesture, so it needs a desktop session like the drags.</summary>
+		private const string ModifierHoldNeedsDesktop =
+			"holding a modifier is a cliclick gesture and needs a real desktop session; the macOS CI runner has none";
+
 		private const string AltMnemonicNotRouted =
 			"portable input delivers Alt+letter as committed text instead of translating it into a system key, so WindowsFormsHost.OnMnemonicCore is never called (the WinForms matching itself is covered by Mnemonic_InvokesHostedButton)";
 
@@ -305,6 +309,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 		public async Task ShiftTab_MovesBackThroughHostedControls()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
+			// Holding a modifier goes through cliclick, which needs a real desktop session; on the
+			// runner it can block until the job timeout (see KnownLibreWpfGaps).
+			KnownLibreWpfGaps.SkipOnMacOS(ModifierHoldNeedsDesktop);
 
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
@@ -353,6 +360,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 		public async Task AltLetter_InvokesHostedMnemonicThroughTheHost()
 		{
 			NativeInputEnvironment.EnsureNativeDragAvailable();
+			KnownLibreWpfGaps.SkipOnMacOS(ModifierHoldNeedsDesktop);
 
 			using var client = await TryConnectAsync();
 			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
