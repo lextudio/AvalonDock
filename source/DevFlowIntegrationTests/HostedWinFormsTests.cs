@@ -28,10 +28,9 @@ namespace AvalonDock.DevFlowIntegrationTests
 	/// drawn. A build that hands the pane to a native child window instead (real WPF) takes input through
 	/// Win32 and is moved but not scaled by a layout transform; the cases skip on the host report
 	/// (<c>visualHost</c> in <c>avd.winforms.tree</c>, which says which host this build has) rather than
-	/// on the OS, because the LibreWPF line also runs on Windows. Not covered: Shift+Tab (the agent cannot
-	/// hold a modifier, and the host chooses the direction from <c>Keyboard.Modifiers</c>), a real
-	/// Alt+letter through the WPF side (the mnemonic case reaches the same WinForms matching directly),
-	/// and painting.
+	/// on the OS, because the LibreWPF line also runs on Windows. Not covered: a real Alt+letter through
+	/// the WPF side (the mnemonic case reaches the same WinForms matching directly). Shift+Tab is covered
+	/// where the agent can hold a modifier (its keydown/keyup uses cliclick), and skips where it cannot.
 	/// </para>
 	/// </remarks>
 	[Collection("DevFlow")]
@@ -293,6 +292,54 @@ namespace AvalonDock.DevFlowIntegrationTests
 			double first = Luminance(foreground);
 			double second = Luminance(background);
 			return (Math.Max(first, second) + 0.05) / (Math.Min(first, second) + 0.05);
+		}
+
+		[Fact]
+		public async Task ShiftTab_MovesBackThroughHostedControls()
+		{
+			NativeInputEnvironment.EnsureNativeDragAvailable();
+
+			using var client = await TryConnectAsync();
+			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
+
+			await RunWithFailureArtifactsAsync(client, nameof(ShiftTab_MovesBackThroughHostedControls), async () =>
+			{
+				await ActivatePaneAsync(client);
+
+				// The host chooses the direction from Keyboard.Modifiers, so the modifier has to be held by
+				// the OS (the agent's keydown) rather than passed to the raised key event.
+				using (var pressed = JsonDocument.Parse((await client.KeyDownAsync("shift", TestContext.Current.CancellationToken)).GetRawText()))
+				{
+					if (!ReadBool(pressed.RootElement, "ok"))
+					{
+						Assert.Skip(ReadString(pressed.RootElement, "reason")
+							?? "this agent cannot hold a modifier key");
+					}
+				}
+
+				try
+				{
+					await ClickHostedControlAsync(client, "mnemonicButton");
+					await WaitForFocusedControlAsync(client, "mnemonicButton");
+
+					using var tab = JsonDocument.Parse(await client.InvokeAsync("avd.input.key", "Tab"));
+					// The modifier reached the keyboard device; without this the direction assertion below
+					// would pass for the wrong reason.
+					Assert.Contains(
+						"Shift",
+						ReadString(tab.RootElement, "keyboardModifiers") ?? string.Empty,
+						StringComparison.Ordinal);
+					Assert.True(
+						ReadBool(tab.RootElement, "handled"),
+						$"Shift+Tab at the last tab stop was not handled, so it never reached the host. Tab={tab.RootElement.GetRawText()}");
+
+					await WaitForFocusedControlAsync(client, "textBox2");
+				}
+				finally
+				{
+					await client.KeyUpAsync("shift", TestContext.Current.CancellationToken);
+				}
+			});
 		}
 
 		/// <summary>Makes the interop pane active, frontmost and wide enough that its content is not clipped.</summary>

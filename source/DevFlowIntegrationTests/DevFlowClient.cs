@@ -329,6 +329,29 @@ namespace AvalonDock.DevFlowIntegrationTests
 		public Task ReleaseAsync(double x, double y, CancellationToken ct = default)
 			=> PostPointActionAndAssertOkAsync("/api/v1/ui/actions/release", x, y, "release", ct);
 
+		/// <summary>
+		/// Presses and holds a real OS-level key, so a gesture can run with a modifier down (cliclick's
+		/// <c>kd:</c> on macOS). Returns the agent's answer: on a platform without that support it reports
+		/// <c>ok:false</c> with a reason, which the caller turns into a skip.
+		/// </summary>
+		public Task<JsonElement> KeyDownAsync(string key, CancellationToken ct = default)
+			=> PostKeyActionAsync("keydown", key, ct);
+
+		/// <summary>Releases a key held by <see cref="KeyDownAsync"/>.</summary>
+		public Task<JsonElement> KeyUpAsync(string key, CancellationToken ct = default)
+			=> PostKeyActionAsync("keyup", key, ct);
+
+		private async Task<JsonElement> PostKeyActionAsync(string action, string key, CancellationToken ct)
+		{
+			var body = JsonSerializer.Serialize(new { key });
+			using var content = new StringContent(body, Encoding.UTF8, "application/json");
+			using var resp = await SendMutationAsync(HttpMethod.Post, $"/api/v1/ui/actions/{action}", content, ct).ConfigureAwait(false);
+			var raw = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+			if (!resp.IsSuccessStatusCode)
+				throw new HttpRequestException($"DevFlow {action} returned {(int)resp.StatusCode}: {raw}");
+			return JsonDocument.Parse(raw).RootElement.Clone();
+		}
+
 		public async Task ClickAsync(double x, double y, CancellationToken ct = default)
 		{
 			// Said on stderr, which the CI log keeps for every platform: what the point lands on and

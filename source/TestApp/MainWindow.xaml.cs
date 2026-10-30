@@ -2678,6 +2678,9 @@ namespace TestApp
 			{
 				["key"] = parsedKey.ToString(),
 				["modifiers"] = modifiers ?? string.Empty,
+				// What the keyboard device reports while the key is delivered. A modifier held by the OS
+				// (the agent's keydown) has to show up here for a Shift+Tab gesture to mean anything.
+				["keyboardModifiers"] = Keyboard.Modifiers.ToString(),
 				["handled"] = handled,
 				["focusBefore"] = before,
 				["focusAfter"] = DescribeFocus(),

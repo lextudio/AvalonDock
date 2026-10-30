@@ -1191,8 +1191,11 @@ Becomes simpler, with one honest caveat.
   (which `WindowsFormsHost` this assembly has) instead of on the OS, because the LibreWPF line also runs on
   Windows: there the visual host is the same one, so those legs exercise the suite too - **but it has not
   run on CI since that change**. They also go through the shared `NativeInputEnvironment` guard, since the
-  clicks are OS-level input. Also **not verified**: Shift+Tab
-  (the agent cannot hold a modifier); the WPF routing of Alt+letter (the host's `OnMnemonicCore` calls the
+  clicks are OS-level input. Shift+Tab is covered too: the agent's `keydown`/`keyup` hold a real
+  modifier (cliclick's `kd:` on macOS), and the case first asserts the modifier reached
+  `Keyboard.Modifiers` before asserting the backward step - it skips where the agent has no
+  modifier support yet (Windows and Linux, where `keydown` answers `ok:false`). Also **not verified**:
+  the WPF routing of Alt+letter (the host's `OnMnemonicCore` calls the
   same `TryProcessMnemonic`, but only `HwndSource` reaches it, and the agent cannot post into it, so the
   mnemonic case calls the WinForms matching directly); and **painting** - under the managed renderer the
   host still draws no pixels, because painting needs a native ProGPU context. That is a separate gap (a
