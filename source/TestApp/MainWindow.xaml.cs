@@ -166,12 +166,19 @@ namespace TestApp
 			}
 			else
 			{
-				// The opt-out path, and every platform whose build has no WinForms integration: the pane
-				// keeps its place in the layout (window and docking scenarios need it there) but shows a
-				// note instead of a host that cannot draw or forward input.
+				// The opt-out path, and - on the original WPF line - every platform whose WPF cannot host a
+				// child window. The pane keeps its place in the layout (window and docking scenarios need it
+				// there) but shows a note instead of a host that cannot draw or forward input.
+#if LIBREWPF
+				// LibreWPF hosts the tree on every platform through its visual host, so a placeholder can
+				// only mean this run asked for it.
+				const string placeholder = "Windows Forms interop is switched off for this run (DEVFLOW_HOST_WINFORMS=0).";
+#else
+				const string placeholder = "Windows Forms interop is only available on Windows.";
+#endif
 				WinFormsWindow.Content = new TextBlock
 				{
-					Text = "Windows Forms interop is only available on Windows.",
+					Text = placeholder,
 					Margin = new Thickness(8),
 					TextWrapping = TextWrapping.Wrap,
 				};
