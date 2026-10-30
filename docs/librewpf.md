@@ -1134,6 +1134,18 @@ Becomes simpler, with one honest caveat.
   reaches those two controls' borders but not the text they lay out, which points at
   `PaintPortableControlTree` (a button's caption rectangle, a text box's retained text) rather than at
   the platform or the host.
+- 2026-10-30 (**the windows-x64 interop failure was an auto-hide flyout, not the host**): after the
+  managed-paint change, `Mnemonic_InvokesHostedButton` failed on windows-x64 and nowhere else, twice, with
+  `textBox1` never taking focus while the next case clicked the same point and passed. The failure
+  artifacts added in the same round (the screen plus `avd.query.layout`, `avd.input.query`,
+  `avd.focus.query` and `avd.winforms.tree`, written under `TestResults/failures` and uploaded with the
+  results) answered it: the click's `originalSource` was a `StackPanel`, `activeControl` was null, the
+  hosted tree reported the expected geometry (ppu 1, textBox1 at 19,49 141x23 px), and the screen showed
+  the auto-hide flyout open over the pane. Clicking anywhere in that overlay lands in the flyout, and the
+  flyout shows on hover, so it can be open before the case's first click. The hosted suite now dismisses
+  it (`avd.autohide.dismiss`) before and between its clicks and re-reads the control's geometry for the
+  second attempt, because anything that moves the layout between the query and the click invalidates the
+  point.
 - 2026-10-29 (**the interop suite: what actually works, and two more host gaps it found**): with
   `a783bd75b` published (OpenAvalon run 40839987388, `0.1.0-preview.69` at 09:35Z) the four cases of
   `HostedWinFormsTests` ran against the package. Text input passed (a native click focuses `textBox1` and

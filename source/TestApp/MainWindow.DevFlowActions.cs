@@ -226,6 +226,9 @@ namespace TestApp
 		[DevFlowAction("avd.query.autohide", Description = "Query the auto-hide flyout: which contents it hosts and whether the named one is open")]
 		public static string QueryAutoHideAction(string contentIdOrTitle = null) => OnUi(w => w.QueryAutoHide(contentIdOrTitle));
 
+		[DevFlowAction("avd.autohide.dismiss", Description = "Close the auto-hide flyout, which overlays the panes and takes clicks aimed at them")]
+		public static string DismissAutoHideFlyoutAction() => OnUi(w => w.DismissAutoHideFlyout());
+
 		[DevFlowAction("avd.winforms.tree", Description = "Report the hosted WinForms control tree: text, tab index, focus and geometry in WinForms pixels")]
 		public static string QueryWinFormsTreeAction() => OnUi(w => w.QueryWinFormsTree());
 

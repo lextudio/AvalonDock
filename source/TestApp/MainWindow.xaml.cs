@@ -2208,6 +2208,28 @@ namespace TestApp
 			});
 		}
 
+		/// <summary>
+		/// Closes the auto-hide flyout if it is open. The flyout is an overlay over the panes, so a click
+		/// aimed at a pane underneath lands in the flyout instead (docs/librewpf.md, 11.9).
+		/// </summary>
+		public string DismissAutoHideFlyout()
+		{
+			var flyout = dockManager.AutoHideWindow;
+			bool wasOpen = flyout != null && flyout.IsVisible;
+			if (wasOpen)
+			{
+				flyout.Hide();
+				dockManager.UpdateLayout();
+				Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+			}
+
+			return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+			{
+				["wasOpen"] = wasOpen,
+				["open"] = dockManager.AutoHideWindow?.IsVisible ?? false,
+			});
+		}
+
 		/// <summary>The auto-hide sidebar button (the "tab" that opens the flyout) for a content id.</summary>
 		private FrameworkElement FindAutoHideTab(string contentId)
 			=> FindVisualDescendants<LayoutAnchorControl>(dockManager)

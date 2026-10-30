@@ -254,6 +254,10 @@ namespace AvalonDock.DevFlowIntegrationTests
 					$"The '{PaneTitle}' pane could not be widened, so a click aimed at its content would land outside it. Width={widened.RootElement.GetRawText()}");
 			}
 
+			// The auto-hide flyout is an overlay across the panes: while it is open a click aimed at the
+			// interop pane lands in the flyout, which is what made this case fail on windows-x64 only.
+			await DismissAutoHideFlyoutAsync(client);
+
 			// A pane with a single anchorable shows a title bar rather than a tab strip, so there is no
 			// tab to click: the pane is visible at startup and stays visible after being widened.
 			//
@@ -281,7 +285,36 @@ namespace AvalonDock.DevFlowIntegrationTests
 				$"The '{PaneTitle}' pane hosts no WinForms control tree (DEVFLOW_HOST_WINFORMS=0?).");
 		}
 
+		/// <summary>Closes the auto-hide flyout and fails if it is still covering the panes.</summary>
+		private static async Task DismissAutoHideFlyoutAsync(DevFlowClient client)
+		{
+			using var dismissed = JsonDocument.Parse(await client.InvokeAsync("avd.autohide.dismiss"));
+			Assert.False(
+				ReadBool(dismissed.RootElement, "open"),
+				$"The auto-hide flyout is still open after being dismissed, so it covers the interop pane. Dismiss={dismissed.RootElement.GetRawText()}");
+		}
+
+		/// <summary>
+		/// Clicks the centre of a hosted control until it takes focus. A click can miss even when the
+		/// geometry is right - the first click on a window that is not the foreground window is consumed
+		/// by activation, and anything else that moves the layout between the query and the click moves
+		/// the point - so the geometry is read again for the second attempt instead of being reused.
+		/// </summary>
 		private static async Task ClickHostedControlAsync(DevFlowClient client, string name)
+		{
+			for (int attempt = 1; attempt <= 2; attempt++)
+			{
+				await DismissAutoHideFlyoutAsync(client);
+				if (await ClickOnceAsync(client, name))
+				{
+					return;
+				}
+			}
+
+			Assert.Fail($"'{name}' did not take focus after two clicks; see the failure artifacts for the screen and the hit target.");
+		}
+
+		private static async Task<bool> ClickOnceAsync(DevFlowClient client, string name)
 		{
 			using var bounds = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.bounds", name));
 			Assert.True(
@@ -296,16 +329,7 @@ namespace AvalonDock.DevFlowIntegrationTests
 				bounds.RootElement.GetProperty("centerY").GetDouble(),
 				TestContext.Current.CancellationToken);
 
-			// The first click on a Windows window that is not the foreground window activates it and is
-			// never delivered to what is under the pointer, so a click that did not move focus is sent
-			// once more. On a window that is already front the first click lands and this costs nothing.
-			if (!await IsActiveControlAsync(client, name, TimeSpan.FromSeconds(2)))
-			{
-				await client.ClickAsync(
-					bounds.RootElement.GetProperty("centerX").GetDouble(),
-					bounds.RootElement.GetProperty("centerY").GetDouble(),
-					TestContext.Current.CancellationToken);
-			}
+			return await IsActiveControlAsync(client, name, TimeSpan.FromSeconds(2));
 		}
 
 		/// <summary>Whether the hosted container's active control is <paramref name="name"/> within a timeout.</summary>
