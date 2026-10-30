@@ -283,6 +283,38 @@ namespace AvalonDock.DevFlowIntegrationTests
 				bounds.RootElement.GetProperty("centerX").GetDouble(),
 				bounds.RootElement.GetProperty("centerY").GetDouble(),
 				TestContext.Current.CancellationToken);
+
+			// The first click on a Windows window that is not the foreground window activates it and is
+			// never delivered to what is under the pointer, so a click that did not move focus is sent
+			// once more. On a window that is already front the first click lands and this costs nothing.
+			if (!await IsActiveControlAsync(client, name, TimeSpan.FromSeconds(2)))
+			{
+				await client.ClickAsync(
+					bounds.RootElement.GetProperty("centerX").GetDouble(),
+					bounds.RootElement.GetProperty("centerY").GetDouble(),
+					TestContext.Current.CancellationToken);
+			}
+		}
+
+		/// <summary>Whether the hosted container's active control is <paramref name="name"/> within a timeout.</summary>
+		private static async Task<bool> IsActiveControlAsync(DevFlowClient client, string name, TimeSpan timeout)
+		{
+			try
+			{
+				await WaitUntilAsync(
+					async () =>
+					{
+						var tree = await QueryWinFormsAsync(client);
+						return string.Equals(ReadString(tree, "activeControl"), name, StringComparison.Ordinal);
+					},
+					timeout,
+					$"'{name}' did not become the hosted container's active control.");
+				return true;
+			}
+			catch (Xunit.Sdk.XunitException)
+			{
+				return false;
+			}
 		}
 
 		/// <summary>
@@ -292,14 +324,12 @@ namespace AvalonDock.DevFlowIntegrationTests
 		/// </summary>
 		private static async Task WaitForFocusedControlAsync(DevFlowClient client, string name)
 		{
-			await WaitUntilAsync(
-				async () =>
-				{
-					var tree = await QueryWinFormsAsync(client);
-					return string.Equals(ReadString(tree, "activeControl"), name, StringComparison.Ordinal);
-				},
-				TimeSpan.FromSeconds(5),
-				$"'{name}' did not become the hosted container's active control.");
+			if (await IsActiveControlAsync(client, name, TimeSpan.FromSeconds(5)))
+			{
+				return;
+			}
+
+			Assert.Fail($"'{name}' did not become the hosted container's active control.");
 		}
 
 		/// <summary>Raises one Tab at the focused element and reports whether the host handled it.</summary>
