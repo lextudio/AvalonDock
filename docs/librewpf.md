@@ -617,10 +617,13 @@ unloads the manager with a floating window open.
 - **System close without Win32.** `avd.close-floating` calls `Window.Close()` on the floating control
   - the path a window manager's close button ends in - instead of posting
   `WM_SYSCOMMAND`/`SC_CLOSE`.
-- **Keyboard limitation.** The agent can insert text into a control on all three platforms, but it
-  cannot hold a modifier or press an arrow key (Linux injects one keysym, macOS goes through
-  cliclick, Windows through SendInput; none implements chords). Gestures are raised as WPF routed
-  input on the focused element, and the assertions are on focus and liveness.
+- **Keyboard limitation.** The agent can insert text into a control on all three platforms, and it
+  can hold a modifier: `/api/v1/ui/actions/keydown` and `keyup` press and release a real OS key
+  (cliclick's `kd:`/`ku:`), which the Shift+Tab case uses - with Shift held, `Keyboard.Modifiers`
+  reports Shift and the host walks backwards. That route is macOS-only today (`keydown` answers
+  `ok:false` elsewhere), so such a case skips on the other legs instead of failing. What the agent
+  cannot do is press an arrow key or deliver a chord as one event, so other gestures are raised as
+  WPF routed input on the focused element, and the assertions are on focus and liveness.
 - **The action surface is static.** This is the important discovery of the port: the LibreWPF agent
   resolves an action either as a static method or as an instance method of a window (it enumerates
   `Application.Current.Windows`), but the **WPF agent implements only the static half** - both
@@ -1194,10 +1197,14 @@ Becomes simpler, with one honest caveat.
   clicks are OS-level input. Shift+Tab is covered too: the agent's `keydown`/`keyup` hold a real
   modifier (cliclick's `kd:` on macOS), and the case first asserts the modifier reached
   `Keyboard.Modifiers` before asserting the backward step - it skips where the agent has no
-  modifier support yet (Windows and Linux, where `keydown` answers `ok:false`). Also **not verified**:
-  the WPF routing of Alt+letter (the host's `OnMnemonicCore` calls the
-  same `TryProcessMnemonic`, but only `HwndSource` reaches it, and the agent cannot post into it, so the
-  mnemonic case calls the WinForms matching directly); and **painting** - under the managed renderer the
+  modifier support yet (Windows and Linux, where `keydown` answers `ok:false`). **Known gap, with a
+  case against it**: a real Alt+letter does not reach the host's mnemonic path. Driving it natively
+  (`keydown alt`, `keydown m`, `keyup m`, `keyup alt`) proves the modifier arrives -
+  `avd.input.key` reports `keyboardModifiers = Alt` - but the letter is delivered as committed text
+  (`textBox1` received it) instead of being translated into a system key, so
+  `WindowsFormsHost.OnMnemonicCore` is never called. `AltLetter_InvokesHostedMnemonicThroughTheHost`
+  asserts that path and skips as a known LibreWPF gap (run it with `DEVFLOW_RUN_KNOWN_GAPS=1`); the
+  WinForms matching itself stays covered by `Mnemonic_InvokesHostedButton`. **Painting** - under the managed renderer the
   host still draws no pixels, because painting needs a native ProGPU context. That is a separate gap (a
   managed paint path, for example rendering the tree to a bitmap) and is not covered by any of the fixes
   above. All three host commits (`f77955728`, the Tab refinement `7624b058d`) are published as the same

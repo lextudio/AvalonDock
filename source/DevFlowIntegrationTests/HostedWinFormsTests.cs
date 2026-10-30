@@ -46,6 +46,13 @@ namespace AvalonDock.DevFlowIntegrationTests
 				Assert.Skip(reason);
 		}
 
+		/// <summary>
+		/// Portable input delivers Alt+letter as text: the letter arrives at the focused hosted control and
+		/// OnMnemonicCore never runs. Recorded here so the case reports it instead of failing the leg.
+		/// </summary>
+		private const string AltMnemonicNotRouted =
+			"portable input delivers Alt+letter as committed text instead of translating it into a system key, so WindowsFormsHost.OnMnemonicCore is never called (the WinForms matching itself is covered by Mnemonic_InvokesHostedButton)";
+
 		private const string KeyboardOnNativeHost =
 			"this build hosts the pane in a native child window that takes keyboard and text input through Win32; the agent's WPF-level key and text events do not reach it";
 		private const string PaneTitle = "WinForms Window";
@@ -338,6 +345,71 @@ namespace AvalonDock.DevFlowIntegrationTests
 				finally
 				{
 					await client.KeyUpAsync("shift", TestContext.Current.CancellationToken);
+				}
+			});
+		}
+
+		[Fact]
+		public async Task AltLetter_InvokesHostedMnemonicThroughTheHost()
+		{
+			NativeInputEnvironment.EnsureNativeDragAvailable();
+
+			using var client = await TryConnectAsync();
+			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
+
+			await RunWithFailureArtifactsAsync(client, nameof(AltLetter_InvokesHostedMnemonicThroughTheHost), async () =>
+			{
+				await ActivatePaneAsync(client);
+
+				// Hold Alt for real: the mnemonic path this case is about starts where the backend turns
+				// Alt+letter into a system key, which the raised-key action cannot do.
+				using (var pressed = JsonDocument.Parse((await client.KeyDownAsync("alt", TestContext.Current.CancellationToken)).GetRawText()))
+				{
+					if (!ReadBool(pressed.RootElement, "ok"))
+					{
+						Assert.Skip(ReadString(pressed.RootElement, "reason") ?? "this agent cannot hold a modifier key");
+					}
+				}
+
+				try
+				{
+					await ClickHostedControlAsync(client, "textBox1");
+					await WaitForFocusedControlAsync(client, "textBox1");
+
+					Assert.DoesNotContain(
+						"mnemonic: clicked",
+						HostedControlText(await QueryWinFormsAsync(client), "label2") ?? string.Empty,
+						StringComparison.Ordinal);
+
+					// A real Alt+M, key down and up, through the OS rather than a raised WPF event.
+					await client.KeyDownAsync("m", TestContext.Current.CancellationToken);
+					await client.KeyUpAsync("m", TestContext.Current.CancellationToken);
+
+					bool clicked = await Task<bool>.Run(async () =>
+					{
+						for (int i = 0; i < 50; i++)
+						{
+							if (HostedControlText(await QueryWinFormsAsync(client), "label2")?.Contains("mnemonic: clicked", StringComparison.Ordinal) == true)
+							{
+								return true;
+							}
+
+							await Task.Delay(100, TestContext.Current.CancellationToken);
+						}
+
+						return false;
+					});
+
+					if (!clicked)
+					{
+						KnownLibreWpfGaps.SkipOnLibreWpf(AltMnemonicNotRouted);
+					}
+
+					Assert.True(clicked, "Alt+M did not run the hosted button's Click handler.");
+				}
+				finally
+				{
+					await client.KeyUpAsync("alt", TestContext.Current.CancellationToken);
 				}
 			});
 		}
