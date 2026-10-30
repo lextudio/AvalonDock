@@ -242,6 +242,59 @@ namespace AvalonDock.DevFlowIntegrationTests
 			});
 		}
 
+		[Fact]
+		public async Task HostedControls_PaintReadableTextOnTheirOwnBackground()
+		{
+			NativeInputEnvironment.EnsureNativeDragAvailable();
+
+			using var client = await TryConnectAsync();
+			await SkipWithoutVisualHostAsync(client, KeyboardOnNativeHost);
+
+			await RunWithFailureArtifactsAsync(client, nameof(HostedControls_PaintReadableTextOnTheirOwnBackground), async () =>
+			{
+				await ActivatePaneAsync(client);
+
+				// A WindowsFormsHost maps the WPF Foreground it inherits onto the hosted tree. Under a dark
+				// theme that is a white foreground, and a WinForms control that paints its own white face
+				// then draws white on white: the caption and the text-box content were present but
+				// invisible. Contrast is what the case can check; the paint itself is covered by the
+				// texture case.
+				using var tree = JsonDocument.Parse(await client.InvokeAsync("avd.winforms.tree"));
+				var controls = ReadArray(tree.RootElement, "controls");
+				Assert.True(controls.Any(), $"The pane hosts no controls. Tree={tree.RootElement.GetRawText()}");
+
+				foreach (var control in controls)
+				{
+					string name = ReadString(control, "name") ?? "(unnamed)";
+					string fore = ReadString(control, "foreColor");
+					string back = ReadString(control, "backColor");
+					Assert.True(
+						Contrast(fore, back) >= 3.0,
+						$"'{name}' paints {fore} on {back}, which is not readable - the hosted tree inherited the WPF foreground instead of using its own colors. Control={control.GetRawText()}");
+				}
+			});
+		}
+
+		/// <summary>WCAG contrast ratio between two <c>#RRGGBB</c> colors; 1 is identical, 21 is black on white.</summary>
+		private static double Contrast(string foreground, string background)
+		{
+			static double Luminance(string color)
+			{
+				Assert.True(color != null && color.Length == 7 && color[0] == '#', $"'{color}' is not an #RRGGBB color.");
+				double Channel(int index)
+				{
+					double value = Convert.ToInt32(color.Substring(index, 2), 16) / 255d;
+					return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+				}
+
+				return (0.2126 * Channel(1)) + (0.7152 * Channel(3)) + (0.0722 * Channel(5));
+			}
+
+			double first = Luminance(foreground);
+			double second = Luminance(background);
+			return (Math.Max(first, second) + 0.05) / (Math.Min(first, second) + 0.05);
+		}
+
 		/// <summary>Makes the interop pane active, frontmost and wide enough that its content is not clipped.</summary>
 		private async Task ActivatePaneAsync(DevFlowClient client)
 		{

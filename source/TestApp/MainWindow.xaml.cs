@@ -2461,6 +2461,11 @@ namespace TestApp
 				["isFocused"] = control.Focused,
 				["enabled"] = control.Enabled,
 				["visible"] = control.Visible,
+				// The colors the control actually paints with. A host that inherits a dark WPF theme's
+				// foreground onto a WinForms tree that paints its own white background produces white on
+				// white, so the cases check contrast rather than just presence.
+				["foreColor"] = $"#{control.ForeColor.R:X2}{control.ForeColor.G:X2}{control.ForeColor.B:X2}",
+				["backColor"] = $"#{control.BackColor.R:X2}{control.BackColor.G:X2}{control.BackColor.B:X2}",
 				["x"] = location.X,
 				["y"] = location.Y,
 				["width"] = control.Width,

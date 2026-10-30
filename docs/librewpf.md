@@ -1134,6 +1134,20 @@ Becomes simpler, with one honest caveat.
   reaches those two controls' borders but not the text they lay out, which points at
   `PaintPortableControlTree` (a button's caption rectangle, a text box's retained text) rather than at
   the platform or the host.
+- 2026-10-30 (**the hosted caption was white on white, not a paint gap**): with the tree painting again, a
+  `Button`'s caption and a `TextBox`'s content were still invisible while every label was readable. The
+  probes that found it painted one hosted control into its own bitmap: the button's border and face were
+  there, `TextRenderer.MeasureText` returned 97x14 for its text, and forcing `ForeColor` to red produced
+  106 red pixels in the same paint - so the text was always drawn, in white. `WindowsFormsHost` maps the
+  WPF `Foreground`/`Background` it inherits onto the hosted tree
+  (`WindowsFormsHostPropertyMap.ForegroundPropertyTranslator`), and under this sample's dark theme that is
+  a white foreground, while `UserControl1` paints its own white face; the labels were unaffected only
+  because the designer sets `ForeColor` on them explicitly. The pane now declares `Foreground="Black"`
+  on the host (the colors its content actually paints), and a new case asserts WCAG contrast between
+  every hosted control's `foreColor` and `backColor` - it fails with `#FFFFFF on #FFFFFF` when the
+  declaration is removed. `avd.winforms.tree` reports both colors per control for that.
+  **Not a LibreWinForms or host defect**: real WPF's host maps the same properties, so the same app would
+  show the same white-on-white.
 - 2026-10-30 (**the windows-x64 interop failure was an auto-hide flyout, not the host**): after the
   managed-paint change, `Mnemonic_InvokesHostedButton` failed on windows-x64 and nowhere else, twice, with
   `textBox1` never taking focus while the next case clicked the same point and passed. The failure
