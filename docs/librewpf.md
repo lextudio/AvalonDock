@@ -1204,7 +1204,17 @@ Becomes simpler, with one honest caveat.
   (`textBox1` received it) instead of being translated into a system key, so
   `WindowsFormsHost.OnMnemonicCore` is never called. `AltLetter_InvokesHostedMnemonicThroughTheHost`
   asserts that path and skips as a known LibreWPF gap (run it with `DEVFLOW_RUN_KNOWN_GAPS=1`); the
-  WinForms matching itself stays covered by `Mnemonic_InvokesHostedButton`. **Painting** - under the managed renderer the
+  WinForms matching itself stays covered by `Mnemonic_InvokesHostedButton`. What the investigation
+  into fixing it found, so the next attempt starts from facts: the agent's `keydown`/`keyup` do reach
+  the app as real key events (`SilkNetWpfInputService` logs `down AltLeft mods=Alt`, `down M mods=Alt`,
+  `char 'µ' mods=Alt`), and the WPF bridge (`CreatePortableWindowInputEvent`) carries `Alt` through to
+  `PortableWindowInputEvent`. Two things block the obvious router: on macOS Option is a compose
+  modifier, so Option+M produces `µ` and no letter mnemonic can match there (this is a
+  Windows/Linux feature); and the text that reached the focused box was a plain `m` with **no**
+  modifiers, i.e. it came from WPF's key-to-text derivation for the `M` keydown rather than from the
+  character event, so portable key handling must stop deriving text while Alt is held before a
+  system-character stage can run. Both live in the portable input stack (PresentationCore /
+  PresentationFramework + `SilkNetWpfInputService`), not in `WindowsFormsHost`. **Painting** - under the managed renderer the
   host still draws no pixels, because painting needs a native ProGPU context. That is a separate gap (a
   managed paint path, for example rendering the tree to a bitmap) and is not covered by any of the fixes
   above. All three host commits (`f77955728`, the Tab refinement `7624b058d`) are published as the same
