@@ -1284,3 +1284,63 @@ The cases move the real pointer for a few minutes; do not touch the machine mean
   8.1e-312 and Y as 0 and `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed with "Floating window
   is not following the pointer". Fixed with an int `POINT`. The arm64-only failures could not be checked on an x64 VM;
   they may share cause (1).
+
+### 11.12 Open work (TODO)
+
+Recorded so the next session starts from evidence instead of re-deriving it. The first item is a
+product gap in LibreWPF's portable input; the rest are coverage gaps in the DevFlow suite.
+
+1. **Alt+letter mnemonics (access keys and `HwndHost.OnMnemonicCore`) do not work under portable
+   input.** `HwndSource` runs the mnemonic stage only from its `WM_CHAR`/`WM_SYSCHAR` case
+   (`HwndSource.cs`, `case WindowMessage.WM_CHAR/WM_SYSCHAR` → `IKeyboardInputSink.OnMnemonic` →
+   `OnMnemonicCore`), and portable input has no window procedure, so nothing performs it. Measured
+   chain today: `SilkNetWpfInputService` logs `down AltLeft mods=Alt`, `down M mods=Alt`,
+   `char 'µ' mods=Alt`, and `WpfPortableWindowActivation.CreatePortableWindowInputEvent` carries
+   `Alt` into `PortableWindowInputEvent` - so the modifier is **not** lost in the agent or the
+   bridge. Two blockers remain:
+   - macOS Option is a compose modifier: Option+M is `µ`, so a letter mnemonic cannot match there.
+     This is a Windows/Linux feature; do not expect it on macOS.
+   - The `m` that reached the focused text box came with **no** modifiers, i.e. WPF derived it from
+     the `M` keydown, not from the character event. Portable key handling has to stop deriving text
+     while Alt is held (the `WM_SYSKEYDOWN` rule) before a system-character stage can run.
+
+   Planned shape (a working draft was written and reverted): a portable router that builds a
+   `WM_SYSCHAR` `MSG`, offers it to the nearest `IKeyboardInputSink` in the focused element's visual
+   ancestry (an `HwndHost` is one), and falls back to `AccessKeyManager.ProcessKey(null, ch, false)`
+   for menus; called from `PortableWindowActivationService.ProcessTextInput`, skipping `AltGr`
+   (`Ctrl+Alt`). It is unverifiable today because the agent's `keydown`/`keyup` exist only for macOS
+   (cliclick); **Windows/Linux need a `SendInput`/XTest implementation first**. Guard:
+   `HostedWinFormsTests.AltLetter_InvokesHostedMnemonicThroughTheHost` (known gap; run with
+   `DEVFLOW_RUN_KNOWN_GAPS=1`).
+2. **IME composition and candidate windows.** The agent delivers committed text only (`fill`/`key`);
+   LibreWPF lists host composition and candidate bounds as explicit unfinished contracts. Nothing to
+   test until both exist.
+3. **Pointer capture/drag and wheel inside the hosted tree.** The interop cases cover clicks, keys and
+   text. A wheel has no observable state with a single-line `TextBox`, and an in-host drag needs a
+   probe for pointer capture before a case can assert anything.
+4. **Runtime DPI change.** CI runners are fixed-DPI; `ScaledHost_ClickLandsOnTheControlItsBoundsDescribe`
+   covers the shared layout-transform/DPI factor, not a monitor or DPI switch at run time.
+
+
+
+`cliclick` needs Accessibility permission for the app that launches the shell (for Claude Code in Claude Desktop:
+`/Applications/Claude.app`; on current macOS the list has no "+" button, so trigger the prompt with
+`AXIsProcessTrustedWithOptions` and prompt = true, then enable the entry and restart the app). Local recipe, all
+local-only edits that must not be committed: a SDK in `global.json` that is installed, and a different DevFlow port
+if 9223 is taken (the `DefaultPort` in `IntegrationTestBase.cs` and the port in `DevFlowAppFixture.cs`). Run with
+`DEVFLOW_RUN_KNOWN_GAPS=1` to include the cases skipped on the CI runner:
+`dotnet run --project source/DevFlowIntegrationTests -c Debug --no-build -- --filter-class '*NativeInputIntegrationTests' --parallel none`.
+The cases move the real pointer for a few minutes; do not touch the machine meanwhile.
+- 2026-10-27 (Windows x64 VM, local run; reported by the VM session): the 24 Windows x64 failures have two causes.
+  (1) The input tool: on Windows `CliclickSharp`'s `Program.Main` passed the raw arguments to
+  `WindowsCommandExecutor.Execute`, so `-w` was taken as the first command, failed, and the process exited 1
+  before `dd` - **no held drag ever ran on Windows** (all 24 fail at `Assert.Equal(0, _process.ExitCode)`). Not a
+  lost button state between invocations. Fix is in the DevFlow repo (`external/cliclick-sharp`): parse the options
+  on every platform and hand the parsed commands to the Windows executor, honouring `-w` between commands and
+  `-r`; with it all 22 `DropTargetZoneIntegrationTests` and `DragDocumentPaneBody_DoesNotFloatDocumentTab` pass.
+  The shipped `dist/CliclickSharp.exe` is Native AOT and must be rebuilt on a machine with the C++ tools.
+  (2) **An AvalonDock bug that also hits classic WPF on Windows**: `WindowsNativeWindowService.GetWindowContentOrigin`
+  declared `ClientToScreen(IntPtr, ref System.Windows.Point)`; Win32 writes a `POINT` of two int32, so X came back as
+  8.1e-312 and Y as 0 and `DragFloatingToolWindow_ToDocumentPane_DocksBackIntoLayout` failed with "Floating window
+  is not following the pointer". Fixed with an int `POINT`. The arm64-only failures could not be checked on an x64 VM;
+  they may share cause (1).
